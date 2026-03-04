@@ -10,6 +10,7 @@ $(DB):
 	sqlite3 $(DB) < pp_indices.sql
 	sqlite3 $(DB) < pp_triggers.sql
 	@echo "$(DB) created successfully."
+	python3 pp.py
 
 clean:
 	@rm -f $(DB)
