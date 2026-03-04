@@ -31,7 +31,7 @@ AFTER INSERT ON Comments_ledger BEGIN
     UPDATE Comments SET
         like_count  = like_count  + new.is_like,
         dlike_count = dlike_count + new.is_dlike
-    WHERE (post_id = new.post_id) AND (comment_id = new.comment_id);
+    WHERE comment_id = new.comment_id;
 END;
 
 CREATE TRIGGER ledger_c_update
@@ -39,7 +39,7 @@ AFTER UPDATE ON Comments_ledger BEGIN
     UPDATE Comments SET
         like_count  = like_count  + (new.is_like  - old.is_like),
         dlike_count = dlike_count + (new.is_dlike - old.is_dlike)
-    WHERE (post_id = new.post_id) AND (comment_id = new.comment_id);
+    WHERE comment_id = new.comment_id;
 END;
 
 CREATE TRIGGER ledger_c_delete
@@ -47,7 +47,7 @@ AFTER DELETE ON Comments_ledger BEGIN
     UPDATE Comments SET
         like_count  = like_count  - old.is_like,
         dlike_count = dlike_count - old.is_dlike
-    WHERE (post_id = new.post_id) AND (comment_id = new.comment_id);
+    WHERE comment_id = old.comment_id;
 END;
 
 -- Follows_ledger triggers

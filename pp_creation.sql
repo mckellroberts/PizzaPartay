@@ -51,7 +51,7 @@ CREATE TABLE IF NOT EXISTS Comments_ledger (
     u_id       INTEGER NOT NULL REFERENCES Users(u_id),
     is_like    INTEGER NOT NULL DEFAULT 0,
     is_dlike   INTEGER NOT NULL DEFAULT 0,
-    PRIMARY KEY (post_id, u_id),
+    PRIMARY KEY (comment_id, u_id)
     CHECK (NOT (is_like = 1 AND is_dlike = 1))
 );
 
