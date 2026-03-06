@@ -8,15 +8,12 @@ def get_connection():
     con.execute("PRAGMA foreign_keys = ON")
     return con
 
-def hash_password(password: str) -> str:
-    return hashlib.sha256(password.encode()).hexdigest()
-
 # ── Users ─────────────────────────────────────────────────────────────────────
 
-def create_user(cur, email, password, username, suffix):
+def create_user(cur, email, password, username):
     cur.execute(
-        "INSERT INTO Users (email_address, password, username, username_suffix) VALUES (?, ?, ?, ?)",
-        (email, hash_password(password), username, suffix)
+        "INSERT INTO Users (email_address, password, username) VALUES (?, ?, ?)",
+        (email, password, username)
     )
     return cur.lastrowid
 
@@ -150,12 +147,12 @@ def seed():
     cur = con.cursor()
 
     # Users
-    alice = create_user(cur, "alice@example.com", "password123", "Alice", 1042)
-    bob   = create_user(cur, "bob@example.com",   "hunter2",     "Bob",   2371)
-    carol = create_user(cur, "carol@example.com", "letmein",     "Carol", 8819)
-    dave  = create_user(cur, "dave@example.com",  "qwerty",      "Dave",  5503)
-    eve   = create_user(cur, "eve@example.com",   "abc123",      "Eve",   3167)
-    frank = create_user(cur, "frank@example.com", "iloveyou",    "Frank", 7294)
+    alice = create_user(cur, "alice@example.com", "password123", "Alice")
+    bob   = create_user(cur, "bob@example.com",   "hunter2",     "Bob")
+    carol = create_user(cur, "carol@example.com", "letmein",     "Carol")
+    dave  = create_user(cur, "dave@example.com",  "qwerty",      "Dave")
+    eve   = create_user(cur, "eve@example.com",   "abc123",      "Eve")
+    frank = create_user(cur, "frank@example.com", "iloveyou",    "Frank")
 
     # Follows
     follow(cur, alice, bob);   follow(cur, alice, carol)
