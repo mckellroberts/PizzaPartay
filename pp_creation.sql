@@ -3,7 +3,6 @@ CREATE TABLE IF NOT EXISTS Users (
     email_address   TEXT    NOT NULL UNIQUE,
     password        TEXT    NOT NULL,
     username        TEXT    NOT NULL,
-    username_suffix INTEGER NOT NULL CHECK(username_suffix BETWEEN 1000 AND 9999),
     is_deleted      INTEGER NOT NULL DEFAULT 0,
     total_followers INTEGER NOT NULL DEFAULT 0,
     total_follows   INTEGER NOT NULL DEFAULT 0
