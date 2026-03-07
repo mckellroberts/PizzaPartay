@@ -153,6 +153,7 @@ def seed():
     dave  = create_user(cur, "dave@example.com",  "qwerty",      "Dave")
     eve   = create_user(cur, "eve@example.com",   "abc123",      "Eve")
     frank = create_user(cur, "frank@example.com", "iloveyou",    "Frank")
+    greg  = create_user(cur, "greg@example.com",  "ilikefish",   "Greg")
 
     # Follows
     follow(cur, alice, bob);   follow(cur, alice, carol)
