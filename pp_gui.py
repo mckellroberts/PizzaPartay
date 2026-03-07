@@ -147,6 +147,49 @@ def create_post(u_id: int, content: str, is_private: int = 0):
             (u_id, content, is_private)
         )
 
+def edit_post(post_id: int, new_content: str):
+    with get_conn() as conn:
+        conn.execute(
+            "UPDATE Posts SET content = ?, been_edited = 1 WHERE post_id = ?",
+            (new_content, post_id)
+        )
+
+def delete_post(post_id: int):
+    with get_conn() as conn:
+        conn.execute(
+            "UPDATE Posts SET is_deleted = 1 WHERE post_id = ?", (post_id,)
+        )
+
+def toggle_post_privacy(post_id: int):
+    with get_conn() as conn:
+        conn.execute(
+            "UPDATE Posts SET is_private = 1 - is_private WHERE post_id = ?",
+            (post_id,)
+        )
+
+def edit_comment(comment_id: int, new_content: str):
+    with get_conn() as conn:
+        conn.execute(
+            "UPDATE Comments SET content = ?, been_edited = 1 WHERE comment_id = ?",
+            (new_content, comment_id)
+        )
+
+def delete_comment(comment_id: int, post_id: int, parent_c_id):
+    with get_conn() as conn:
+        conn.execute(
+            "UPDATE Comments SET is_deleted = 1 WHERE comment_id = ?",
+            (comment_id,)
+        )
+        conn.execute(
+            "UPDATE Posts SET comment_count = MAX(0, comment_count - 1) "
+            "WHERE post_id = ?", (post_id,)
+        )
+        if parent_c_id:
+            conn.execute(
+                "UPDATE Comments SET comment_count = MAX(0, comment_count - 1) "
+                "WHERE comment_id = ?", (parent_c_id,)
+            )
+
 def create_comment(post_id: int, u_id: int, content: str, parent_c_id=None):
     with get_conn() as conn:
         conn.execute(
@@ -204,6 +247,7 @@ ACCENT     = "#5865f2"
 ACCENT_HOV = "#4752c4"
 LIKE_CLR   = "#57f287"
 DLIK_CLR   = "#ed4245"
+SUCCESS    = "#57f287"
 TEXT       = "#e8e8e8"
 SUBTEXT    = "#777777"
 ERROR      = "#ed4245"
@@ -781,78 +825,255 @@ class ProfilePanel(tk.Frame):
         tk.Frame(inner, bg=BORDER, height=1).pack(fill="x", padx=30)
 
         # ── Post list ─────────────────────────────────────────────────────────
-        posts = get_user_posts(self.profile_u_id, self.viewer_u_id)
+        self._post_list_frame = inner  # keep ref for refresh
 
-        if not posts:
-            tk.Label(inner, text="No posts yet.", font=FONT_SMALL,
-                     bg=BG, fg=SUBTEXT).pack(pady=30)
-        else:
-            tk.Frame(inner, bg=BG, height=8).pack()
-            for row in posts:
-                # row has 12 cols: standard 11 + is_private at index 11
-                ProfilePostCard(inner, row, self.viewer_u_id)
+        def refresh_posts():
+            # Remove old post cards (everything after the header/divider)
+            # Easiest: just re-run from the posts section downward.
+            # We rebuild via a helper stored on self.
+            self._refresh_post_list()
+
+        self._refresh_post_list_fn = refresh_posts
+        self._post_list_container  = inner
+        self._render_post_list(inner)
 
         tk.Frame(inner, bg=BG, height=24).pack()
 
+    def _render_post_list(self, container):
+        """Clear and re-render all post cards inside container."""
+        # Destroy only post card widgets (everything after index determined by tag)
+        for w in getattr(self, "_post_card_widgets", []):
+            w.destroy()
+        self._post_card_widgets = []
+
+        posts = get_user_posts(self.profile_u_id, self.viewer_u_id)
+        is_owner = (self.profile_u_id == self.owner_u_id)
+
+        if not posts:
+            lbl = tk.Label(container, text="No posts yet.", font=FONT_SMALL,
+                           bg=BG, fg=SUBTEXT)
+            lbl.pack(pady=30)
+            self._post_card_widgets.append(lbl)
+        else:
+            spacer = tk.Frame(container, bg=BG, height=8)
+            spacer.pack()
+            self._post_card_widgets.append(spacer)
+            for row in posts:
+                card = ProfilePostCard(
+                    container, row, self.viewer_u_id,
+                    is_owner=is_owner,
+                    on_change=self._render_post_list_refresh
+                )
+                self._post_card_widgets.append(card)
+
+    def _render_post_list_refresh(self):
+        self._render_post_list(self._post_list_container)
+
 
 class ProfilePostCard(tk.Frame):
-    """Slimmed-down read-only post card for the profile page."""
+    """Post card on the profile page — shows owner controls when is_owner=True."""
 
-    def __init__(self, parent, row, viewer_u_id: int):
+    def __init__(self, parent, row, viewer_u_id: int,
+                 is_owner: bool = False, on_change=None):
         super().__init__(parent, bg=CARD,
                          highlightthickness=1, highlightbackground=BORDER)
         self.pack(fill="x", padx=30, pady=(0, 10))
 
-        (post_id, _, author, content, created_at,
-         likes, dlikes, n_comments, edited,
-         my_like, my_dlike, is_private) = row
+        (self.post_id, _, self.author, self.content, self.created_at,
+         self.likes, self.dlikes, self.n_comments, self.edited,
+         self.my_like, self.my_dlike, self.is_private) = row
 
         self.viewer_u_id = viewer_u_id
-        self.post_id     = post_id
+        self.is_owner    = is_owner
+        self.on_change   = on_change  # called after any mutation
+        self._editing    = False
+
+        self._build()
+
+    def _build(self):
+        for w in self.winfo_children():
+            w.destroy()
 
         # ── Header ────────────────────────────────────────────────────────────
         hdr = tk.Frame(self, bg=CARD)
         hdr.pack(fill="x", padx=14, pady=(10, 0))
 
-        clr = avatar_color(author)
+        clr = avatar_color(self.author)
         av  = tk.Canvas(hdr, width=30, height=30, bg=CARD, highlightthickness=0)
         av.pack(side="left")
         av.create_oval(1, 1, 29, 29, fill=clr, outline="")
-        av.create_text(15, 15, text=author[0].upper(),
+        av.create_text(15, 15, text=self.author[0].upper(),
                        fill="white", font=("Helvetica", 10, "bold"))
 
         meta = tk.Frame(hdr, bg=CARD)
         meta.pack(side="left", padx=(10, 0))
-        tk.Label(meta, text=f"@{author}",
+        tk.Label(meta, text=f"@{self.author}",
                  font=FONT_HANDLE, bg=CARD, fg=TEXT).pack(anchor="w")
-        age = format_age(created_at) + (" · edited" if edited else "")
-        if is_private:
+        age = format_age(self.created_at) + (" · edited" if self.edited else "")
+        if self.is_private:
             age += "  🔒"
         tk.Label(meta, text=age, font=FONT_META, bg=CARD, fg=SUBTEXT
                  ).pack(anchor="w")
 
-        # ── Content ───────────────────────────────────────────────────────────
-        tk.Label(self, text=content, font=FONT_POST, bg=CARD, fg=TEXT,
-                 wraplength=608, justify="left", anchor="w"
-                 ).pack(fill="x", padx=14, pady=(8, 10))
+        # Owner action buttons (top-right)
+        if self.is_owner:
+            action_bar = tk.Frame(hdr, bg=CARD)
+            action_bar.pack(side="right")
+
+            priv_lbl = "Make Public" if self.is_private else "Make Private"
+            priv_clr = SUCCESS if self.is_private else SUBTEXT
+
+            def _icon_btn(parent, text, fg, cmd):
+                b = tk.Button(parent, text=text, command=cmd,
+                              bg=CARD, fg=fg,
+                              activebackground=CARD_HOV, activeforeground=TEXT,
+                              relief="flat", font=FONT_META, cursor="hand2",
+                              borderwidth=0, padx=6)
+                b.pack(side="left")
+                b.bind("<Enter>", lambda e: b.configure(fg=TEXT))
+                b.bind("<Leave>", lambda e: b.configure(fg=fg))
+                return b
+
+            _icon_btn(action_bar, "✏ Edit",       SUBTEXT,   self._start_edit)
+            _icon_btn(action_bar, f"🔒 {priv_lbl}", priv_clr, self._toggle_private)
+            _icon_btn(action_bar, "🗑 Delete",     DLIK_CLR,  self._confirm_delete)
+
+        # ── Content area ──────────────────────────────────────────────────────
+        if self._editing:
+            edit_frame = tk.Frame(self, bg=CARD)
+            edit_frame.pack(fill="x", padx=14, pady=(8, 0))
+
+            self._edit_box = tk.Text(
+                edit_frame, height=4, font=FONT_POST,
+                bg=ENTRY_BG, fg=TEXT, insertbackground=TEXT,
+                relief="flat", wrap="word",
+                highlightthickness=1, highlightbackground=BORDER,
+                highlightcolor=ACCENT, padx=8, pady=6
+            )
+            self._edit_box.insert("1.0", self.content)
+            self._edit_box.pack(fill="x")
+
+            btn_row = tk.Frame(self, bg=CARD)
+            btn_row.pack(fill="x", padx=14, pady=(6, 10))
+
+            self._edit_status = tk.StringVar()
+            tk.Label(btn_row, textvariable=self._edit_status,
+                     font=FONT_SMALL, bg=CARD, fg=ERROR).pack(side="left")
+
+            tk.Button(btn_row, text="Cancel", command=self._cancel_edit,
+                      bg="#2e2e2e", fg=SUBTEXT,
+                      activebackground=BORDER, activeforeground=TEXT,
+                      relief="flat", font=FONT_SMALL, cursor="hand2",
+                      borderwidth=0, padx=12, pady=4
+                      ).pack(side="right", padx=(6, 0))
+            tk.Button(btn_row, text="Save", command=self._save_edit,
+                      bg=ACCENT, fg="white",
+                      activebackground=ACCENT_HOV, activeforeground="white",
+                      relief="flat", font=FONT_BTN, cursor="hand2",
+                      borderwidth=0, padx=12, pady=4
+                      ).pack(side="right")
+        else:
+            self._content_lbl = tk.Label(
+                self, text=self.content, font=FONT_POST,
+                bg=CARD, fg=TEXT, wraplength=608,
+                justify="left", anchor="w"
+            )
+            self._content_lbl.pack(fill="x", padx=14, pady=(8, 10))
 
         # ── Stats strip ───────────────────────────────────────────────────────
         tk.Frame(self, bg=BORDER, height=1).pack(fill="x")
         strip = tk.Frame(self, bg=CARD)
         strip.pack(fill="x", padx=12, pady=5)
 
-        lc = LIKE_CLR if my_like  else SUBTEXT
-        dc = DLIK_CLR if my_dlike else SUBTEXT
-        tk.Label(strip, text=f"▲  {likes}",
+        lc = LIKE_CLR if self.my_like  else SUBTEXT
+        dc = DLIK_CLR if self.my_dlike else SUBTEXT
+        tk.Label(strip, text=f"▲  {self.likes}",
                  font=("Helvetica", 9, "bold"), bg=CARD, fg=lc
                  ).pack(side="left", padx=(4, 0))
-        tk.Label(strip, text=f"▼  {dlikes}",
+        tk.Label(strip, text=f"▼  {self.dlikes}",
                  font=("Helvetica", 9, "bold"), bg=CARD, fg=dc
                  ).pack(side="left", padx=(8, 0))
         tk.Label(strip,
-                 text=f"💬  {n_comments}  comment{'s' if n_comments != 1 else ''}",
+                 text=f"💬  {self.n_comments}  comment{'s' if self.n_comments != 1 else ''}",
                  font=FONT_META, bg=CARD, fg=SUBTEXT
                  ).pack(side="left", padx=(12, 0))
+
+    # ── Edit ──────────────────────────────────────────────────────────────────
+
+    def _start_edit(self):
+        self._editing = True
+        self._build()
+        self._edit_box.focus_set()
+
+    def _cancel_edit(self):
+        self._editing = False
+        self._build()
+
+    def _save_edit(self):
+        new_content = self._edit_box.get("1.0", "end-1c").strip()
+        if not new_content:
+            self._edit_status.set("Content can't be empty.")
+            return
+        if len(new_content) > 280:
+            self._edit_status.set("Too long (max 280 chars).")
+            return
+        edit_post(self.post_id, new_content)
+        self.content = new_content
+        self.edited  = 1
+        self._editing = False
+        self._build()
+
+    # ── Privacy toggle ────────────────────────────────────────────────────────
+
+    def _toggle_private(self):
+        toggle_post_privacy(self.post_id)
+        self.is_private = 0 if self.is_private else 1
+        self._build()
+
+    # ── Delete ────────────────────────────────────────────────────────────────
+
+    def _confirm_delete(self):
+        dialog = tk.Toplevel(self)
+        dialog.title("Delete Post")
+        dialog.configure(bg=PANEL)
+        dialog.resizable(False, False)
+        dialog.grab_set()
+
+        w, h = 320, 140
+        dialog.geometry(f"{w}x{h}")
+        dialog.update_idletasks()
+        px = self.winfo_rootx() + (self.winfo_width()  - w) // 2
+        py = self.winfo_rooty() + (self.winfo_height() - h) // 2
+        dialog.geometry(f"{w}x{h}+{px}+{py}")
+
+        tk.Label(dialog, text="Delete this post?",
+                 font=FONT_HANDLE, bg=PANEL, fg=TEXT).pack(pady=(20, 4))
+        tk.Label(dialog, text="This can't be undone.",
+                 font=FONT_SMALL, bg=PANEL, fg=SUBTEXT).pack()
+
+        btn_row = tk.Frame(dialog, bg=PANEL)
+        btn_row.pack(pady=16)
+
+        tk.Button(btn_row, text="Cancel", command=dialog.destroy,
+                  bg="#2e2e2e", fg=SUBTEXT,
+                  activebackground=BORDER, activeforeground=TEXT,
+                  relief="flat", font=FONT_SMALL, cursor="hand2",
+                  borderwidth=0, padx=16, pady=6
+                  ).pack(side="left", padx=(0, 8))
+
+        def do_delete():
+            dialog.destroy()
+            delete_post(self.post_id)
+            self.destroy()
+            if self.on_change:
+                self.on_change()
+
+        tk.Button(btn_row, text="Delete", command=do_delete,
+                  bg=DLIK_CLR, fg="white",
+                  activebackground="#c0392b", activeforeground="white",
+                  relief="flat", font=FONT_BTN, cursor="hand2",
+                  borderwidth=0, padx=16, pady=6
+                  ).pack(side="left")
 
 
 # ── Post card ─────────────────────────────────────────────────────────────────
@@ -1043,44 +1264,43 @@ class CommentsDialog(tk.Toplevel):
         )
         self._reply_indicator_lbl.pack(anchor="w", pady=(0, 4))
 
-        text_row = tk.Frame(composer_frame, bg=PANEL)
-        text_row.pack(fill="x")
-
+        # Text box — full width
         self._comment_entry = tk.Text(
-            text_row, height=2, font=FONT_POST,
+            composer_frame, height=2, font=FONT_POST,
             bg=ENTRY_BG, fg=TEXT, insertbackground=TEXT,
             relief="flat", wrap="word",
             highlightthickness=1, highlightbackground=BORDER,
             highlightcolor=ACCENT, padx=8, pady=6
         )
-        self._comment_entry.pack(side="left", fill="x", expand=True)
+        self._comment_entry.pack(fill="x")
 
-        btn_col = tk.Frame(text_row, bg=PANEL)
-        btn_col.pack(side="left", padx=(8, 0))
+        # Buttons row below the text box
+        btn_row = tk.Frame(composer_frame, bg=PANEL)
+        btn_row.pack(fill="x", pady=(6, 0))
+
+        self._comment_status = tk.StringVar()
+        tk.Label(btn_row, textvariable=self._comment_status,
+                 font=FONT_SMALL, bg=PANEL, fg=ERROR).pack(side="left")
 
         post_btn = tk.Button(
-            btn_col, text="Post",
+            btn_row, text="Post",
             command=self._submit_comment,
             bg=ACCENT, fg="white",
             activebackground=ACCENT_HOV, activeforeground="white",
             relief="flat", font=FONT_BTN, cursor="hand2",
-            padx=14, pady=6, borderwidth=0
+            padx=16, pady=4, borderwidth=0
         )
-        post_btn.pack(fill="x")
+        post_btn.pack(side="right")
 
         self._cancel_reply_btn = tk.Button(
-            btn_col, text="Cancel",
+            btn_row, text="✕ Cancel reply",
             command=self._cancel_reply,
-            bg="#2e2e2e", fg=SUBTEXT,
+            bg=PANEL, fg=SUBTEXT,
             activebackground=BORDER, activeforeground=TEXT,
             relief="flat", font=FONT_SMALL, cursor="hand2",
-            padx=14, pady=4, borderwidth=0
+            padx=10, pady=4, borderwidth=0
         )
-        # Only shown when replying
-
-        self._comment_status = tk.StringVar()
-        tk.Label(composer_frame, textvariable=self._comment_status,
-                 font=FONT_SMALL, bg=PANEL, fg=ERROR).pack(anchor="w", pady=(4, 0))
+        # Only shown when replying (packed dynamically by _set_reply_target)
 
         # Bind Ctrl+Enter to post
         self._comment_entry.bind("<Control-Return>", lambda e: self._submit_comment())
@@ -1141,11 +1361,12 @@ class CommentsDialog(tk.Toplevel):
                 children.setdefault(pid, []).append(r)
 
         def render(node, depth=0):
-            (cid, _, uid, uname, content, created_at,
+            (cid, parent_cid, uid, uname, content, created_at,
              likes, dlikes, edited, my_like, my_dlike) = node
 
+            is_mine   = (uid == self.viewer_u_id)
             indent_px = depth * 22
-            wrapper = tk.Frame(parent, bg=BG)
+            wrapper   = tk.Frame(parent, bg=BG)
             wrapper.pack(fill="x", padx=(16 + indent_px, 16), pady=(8, 0))
 
             if depth > 0:
@@ -1156,7 +1377,7 @@ class CommentsDialog(tk.Toplevel):
                             highlightthickness=1, highlightbackground=BORDER)
             card.pack(side="left", fill="x", expand=True)
 
-            # Header
+            # ── Header ────────────────────────────────────────────────────────
             chdr = tk.Frame(card, bg=CARD)
             chdr.pack(fill="x", padx=10, pady=(8, 4))
 
@@ -1174,14 +1395,39 @@ class CommentsDialog(tk.Toplevel):
             tk.Label(chdr, text=age, font=FONT_META,
                      bg=CARD, fg=SUBTEXT).pack(side="left", padx=(6, 0))
 
-            # Content
+            # Owner buttons on the right side of header
+            if is_mine:
+                own_bar = tk.Frame(chdr, bg=CARD)
+                own_bar.pack(side="right")
+
+                def _small_btn(parent, text, fg, cmd):
+                    b = tk.Button(parent, text=text, command=cmd,
+                                  bg=CARD, fg=fg,
+                                  activebackground=CARD_HOV, activeforeground=TEXT,
+                                  relief="flat", font=FONT_META, cursor="hand2",
+                                  borderwidth=0, padx=6)
+                    b.pack(side="left")
+                    b.bind("<Enter>", lambda e: b.configure(fg=TEXT))
+                    b.bind("<Leave>", lambda e: b.configure(fg=fg))
+                    return b
+
+                def make_edit(c_id=cid, c_content=content, c_card=card):
+                    return lambda: self._open_edit_comment(c_id, c_content)
+
+                def make_delete(c_id=cid, p_cid=parent_cid):
+                    return lambda: self._confirm_delete_comment(c_id, p_cid)
+
+                _small_btn(own_bar, "✏ Edit",   SUBTEXT,  make_edit())
+                _small_btn(own_bar, "🗑 Delete", DLIK_CLR, make_delete())
+
+            # ── Content ───────────────────────────────────────────────────────
             wrap = max(460 - indent_px * 2, 240)
             tk.Label(card, text=content, font=FONT_POST,
                      bg=CARD, fg=TEXT, wraplength=wrap,
                      justify="left", anchor="w").pack(
                 fill="x", padx=10, pady=(0, 6))
 
-            # Action strip: reactions + Reply
+            # ── Action strip ──────────────────────────────────────────────────
             arow = tk.Frame(card, bg=CARD)
             arow.pack(fill="x", padx=8, pady=(0, 6))
 
@@ -1194,7 +1440,6 @@ class CommentsDialog(tk.Toplevel):
                      font=("Helvetica", 8, "bold"), bg=CARD, fg=dc
                      ).pack(side="left", padx=(8, 0))
 
-            # Reply button — captures cid and uname by default arg
             def make_reply(c_id=cid, c_uname=uname):
                 return lambda: self._set_reply_target(c_id, c_uname)
 
@@ -1210,19 +1455,123 @@ class CommentsDialog(tk.Toplevel):
             reply_btn.bind("<Enter>", lambda e: reply_btn.configure(fg=ACCENT))
             reply_btn.bind("<Leave>", lambda e: reply_btn.configure(fg=SUBTEXT))
 
-            # Recurse into children
             for child in children.get(cid, []):
                 render(child, depth + 1)
 
         for root in roots:
             render(root)
 
+    # ── Comment edit / delete ─────────────────────────────────────────────────
+
+    def _open_edit_comment(self, comment_id: int, current_content: str):
+        dialog = tk.Toplevel(self)
+        dialog.title("Edit Comment")
+        dialog.configure(bg=PANEL)
+        dialog.resizable(False, False)
+        dialog.grab_set()
+
+        w, h = 420, 200
+        dialog.geometry(f"{w}x{h}")
+        dialog.update_idletasks()
+        px = self.winfo_x() + (self.winfo_width()  - w) // 2
+        py = self.winfo_y() + (self.winfo_height() - h) // 2
+        dialog.geometry(f"{w}x{h}+{px}+{py}")
+
+        tk.Label(dialog, text="Edit your comment",
+                 font=FONT_HANDLE, bg=PANEL, fg=TEXT).pack(padx=16, pady=(14, 6), anchor="w")
+
+        text_box = tk.Text(
+            dialog, height=4, font=FONT_POST,
+            bg=ENTRY_BG, fg=TEXT, insertbackground=TEXT,
+            relief="flat", wrap="word",
+            highlightthickness=1, highlightbackground=BORDER,
+            highlightcolor=ACCENT, padx=8, pady=6
+        )
+        text_box.insert("1.0", current_content)
+        text_box.pack(fill="x", padx=16)
+
+        status_var = tk.StringVar()
+        tk.Label(dialog, textvariable=status_var,
+                 font=FONT_SMALL, bg=PANEL, fg=ERROR).pack(padx=16, anchor="w")
+
+        btn_row = tk.Frame(dialog, bg=PANEL)
+        btn_row.pack(fill="x", padx=16, pady=(6, 14))
+
+        tk.Button(btn_row, text="Cancel", command=dialog.destroy,
+                  bg="#2e2e2e", fg=SUBTEXT,
+                  activebackground=BORDER, activeforeground=TEXT,
+                  relief="flat", font=FONT_SMALL, cursor="hand2",
+                  borderwidth=0, padx=14, pady=5
+                  ).pack(side="right", padx=(6, 0))
+
+        def save():
+            new_text = text_box.get("1.0", "end-1c").strip()
+            if not new_text:
+                status_var.set("Comment can't be empty.")
+                return
+            if len(new_text) > 500:
+                status_var.set("Too long (max 500 chars).")
+                return
+            edit_comment(comment_id, new_text)
+            dialog.destroy()
+            self._build_scroll_area()
+
+        tk.Button(btn_row, text="Save", command=save,
+                  bg=ACCENT, fg="white",
+                  activebackground=ACCENT_HOV, activeforeground="white",
+                  relief="flat", font=FONT_BTN, cursor="hand2",
+                  borderwidth=0, padx=14, pady=5
+                  ).pack(side="right")
+
+        text_box.bind("<Control-Return>", lambda e: save())
+
+    def _confirm_delete_comment(self, comment_id: int, parent_cid):
+        dialog = tk.Toplevel(self)
+        dialog.title("Delete Comment")
+        dialog.configure(bg=PANEL)
+        dialog.resizable(False, False)
+        dialog.grab_set()
+
+        w, h = 320, 140
+        dialog.geometry(f"{w}x{h}")
+        dialog.update_idletasks()
+        px = self.winfo_x() + (self.winfo_width()  - w) // 2
+        py = self.winfo_y() + (self.winfo_height() - h) // 2
+        dialog.geometry(f"{w}x{h}+{px}+{py}")
+
+        tk.Label(dialog, text="Delete this comment?",
+                 font=FONT_HANDLE, bg=PANEL, fg=TEXT).pack(pady=(20, 4))
+        tk.Label(dialog, text="This can't be undone.",
+                 font=FONT_SMALL, bg=PANEL, fg=SUBTEXT).pack()
+
+        btn_row = tk.Frame(dialog, bg=PANEL)
+        btn_row.pack(pady=16)
+
+        tk.Button(btn_row, text="Cancel", command=dialog.destroy,
+                  bg="#2e2e2e", fg=SUBTEXT,
+                  activebackground=BORDER, activeforeground=TEXT,
+                  relief="flat", font=FONT_SMALL, cursor="hand2",
+                  borderwidth=0, padx=16, pady=6
+                  ).pack(side="left", padx=(0, 8))
+
+        def do_delete():
+            dialog.destroy()
+            delete_comment(comment_id, self.post_id, parent_cid)
+            self._build_scroll_area()
+
+        tk.Button(btn_row, text="Delete", command=do_delete,
+                  bg=DLIK_CLR, fg="white",
+                  activebackground="#c0392b", activeforeground="white",
+                  relief="flat", font=FONT_BTN, cursor="hand2",
+                  borderwidth=0, padx=16, pady=6
+                  ).pack(side="left")
+
     # ── Reply targeting ───────────────────────────────────────────────────────
 
     def _set_reply_target(self, comment_id: int, username: str):
         self._reply_to_id = comment_id
         self._reply_indicator_var.set(f"↩  Replying to @{username}")
-        self._cancel_reply_btn.pack(fill="x", pady=(4, 0))
+        self._cancel_reply_btn.pack(side="right", padx=(6, 0))
         self._comment_entry.focus_set()
 
     def _cancel_reply(self):
