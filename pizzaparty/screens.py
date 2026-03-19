@@ -452,8 +452,6 @@ class MainScreen(tk.Frame):
             lambda e: self._canvas.configure(scrollregion=self._canvas.bbox("all")))
         self._canvas.bind("<Configure>",
             lambda e: self._canvas.itemconfig(self._win_id, width=e.width))
-        self._canvas.bind_all("<MouseWheel>",
-            lambda e: self._canvas.yview_scroll(int(-1 * (e.delta / 120)), "units"))
 
     def refresh(self):
         for w in self._feed_frame.winfo_children():
@@ -510,8 +508,6 @@ class ProfilePanel(tk.Frame):
             lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
         canvas.bind("<Configure>",
             lambda e: canvas.itemconfig(win_id, width=e.width))
-        canvas.bind_all("<MouseWheel>",
-            lambda e: canvas.yview_scroll(int(-1 * (e.delta / 120)), "units"))
 
         info = db.get_profile(self.profile_u_id)
         if not info:

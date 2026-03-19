@@ -110,6 +110,7 @@ def format_age(ts: str) -> str:
 def avatar_color(name: str) -> str:
     return AVATAR_PALETTE[sum(ord(c) for c in name) % len(AVATAR_PALETTE)]
 
+
 def auto_wrap(label: tk.Label, padding: int = 28):
     """Bind a label's wraplength to its parent container width minus padding."""
     def _update(event):

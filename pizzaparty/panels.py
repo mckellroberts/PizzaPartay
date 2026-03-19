@@ -353,14 +353,12 @@ class CommentsPanel(tk.Frame):
 
         tk.Frame(self, bg=BORDER, height=1).pack(fill="x")
 
-        self._scroll_outer = tk.Frame(self, bg=BG)
-        self._scroll_outer.pack(fill="both", expand=True)
-        self._build_scroll_area()
+        # ── Composer (packed bottom-first so scroll area doesn't steal the space)
 
-        tk.Frame(self, bg=BORDER, height=1).pack(fill="x")
+        tk.Frame(self, bg=BORDER, height=1).pack(side="bottom", fill="x")
 
         composer = tk.Frame(self, bg=PANEL)
-        composer.pack(fill="x", padx=10, pady=8)
+        composer.pack(side="bottom", fill="x", padx=10, pady=8)
 
         self._reply_indicator_var = tk.StringVar(value="")
         tk.Label(composer, textvariable=self._reply_indicator_var,
@@ -402,6 +400,12 @@ class CommentsPanel(tk.Frame):
 
         self._comment_entry.bind("<Control-Return>", lambda e: self._submit_comment())
 
+        # ── Scroll area (fills remaining space after composer is reserved)
+
+        self._scroll_outer = tk.Frame(self, bg=BG)
+        self._scroll_outer.pack(fill="both", expand=True)
+        self._build_scroll_area()
+
     # ── Comment list ──────────────────────────────────────────────────────────
 
     def _build_scroll_area(self):
@@ -424,8 +428,6 @@ class CommentsPanel(tk.Frame):
             lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
         canvas.bind("<Configure>",
             lambda e: canvas.itemconfig(win_id, width=e.width))
-        canvas.bind_all("<MouseWheel>",
-            lambda e: canvas.yview_scroll(int(-1 * (e.delta / 120)), "units"))
 
         if not comments:
             tk.Label(inner, text="No comments yet — be the first!",

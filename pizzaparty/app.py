@@ -1,3 +1,4 @@
+import sys
 import tkinter as tk
 from pizzaparty.theme import init_fonts, scale_fonts, BASE_W, BG
 from pizzaparty.db import save_session, clear_sessions
@@ -20,6 +21,12 @@ class App(tk.Tk):
 
         self._center(420, 520)
         self.bind("<Configure>", self._on_configure)
+        if sys.platform.startswith("linux"):
+            self.bind_all("<Button-4>", lambda e: self._on_scroll(e, -1))
+            self.bind_all("<Button-5>", lambda e: self._on_scroll(e,  1))
+        else:
+            self.bind_all("<MouseWheel>",
+                lambda e: self._on_scroll(e, int(-1 * e.delta / 120)))
         if auto_login:
             for u_id, username in auto_login:
                 save_session(u_id)
@@ -38,6 +45,17 @@ class App(tk.Tk):
         x = (self.winfo_screenwidth()  - w) // 2
         y = (self.winfo_screenheight() - h) // 2
         self.geometry(f"{w}x{h}+{x}+{y}")
+
+    def _on_scroll(self, event, delta):
+        widget = self.winfo_containing(event.x_root, event.y_root)
+        while widget:
+            if isinstance(widget, tk.Canvas):
+                try:
+                    widget.yview_scroll(delta, "units")
+                except tk.TclError:
+                    pass
+                return
+            widget = getattr(widget, "master", None)
 
     # ── Resize handler ────────────────────────────────────────────────────────
 
