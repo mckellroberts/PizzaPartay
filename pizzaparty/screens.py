@@ -185,8 +185,7 @@ class MainScreen(tk.Frame):
         self.app.close_comments()
         self.app.close_switcher()
         self._clear_content()
-        if self._current_feed in ("for_you", "my_posts", "private"):
-            self._build_composer()
+        if self._current_feed == "for_you":
             self._build_feed_area()
             self.refresh()
         else:
@@ -196,20 +195,108 @@ class MainScreen(tk.Frame):
                 font=F["FONT_SMALL"], bg=BG, fg=SUBTEXT, pady=60
             ).pack()
 
+    def _show_compose(self):
+        self.app.close_comments()
+        self.app.close_switcher()
+        self._clear_content()
+
+        outer = tk.Frame(self._content_frame, bg=BG)
+        outer.pack(fill="both", expand=True, padx=30, pady=20)
+
+        back_btn = tk.Button(
+            outer, text="← Back", command=self._show_feed,
+            bg=BG, fg=SUBTEXT, activebackground=BG, activeforeground=TEXT,
+            relief="flat", font=F["FONT_SMALL"], cursor="hand2", borderwidth=0
+        )
+        back_btn.pack(anchor="w", pady=(0, 12))
+        back_btn.bind("<Enter>", lambda e: back_btn.configure(fg=TEXT))
+        back_btn.bind("<Leave>", lambda e: back_btn.configure(fg=SUBTEXT))
+
+        card = tk.Frame(outer, bg=CARD,
+                        highlightthickness=1, highlightbackground=BORDER)
+        card.pack(fill="x")
+
+        hdr = tk.Frame(card, bg=CARD)
+        hdr.pack(fill="x", padx=12, pady=(12, 6))
+
+        clr = avatar_color(self.username)
+        av  = tk.Canvas(hdr, width=30, height=30, bg=CARD, highlightthickness=0)
+        av.pack(side="left")
+        av.create_oval(1, 1, 29, 29, fill=clr, outline="")
+        av.create_text(15, 15, text=self.username[0].upper(),
+                       fill="white", font=F["FONT_AV_MD"])
+        tk.Label(hdr, text="New Post", font=F["FONT_HANDLE"],
+                 bg=CARD, fg=TEXT).pack(side="left", padx=(10, 0))
+
+        text_box = tk.Text(
+            card, height=5, font=F["FONT_POST"],
+            bg=ENTRY_BG, fg=TEXT, insertbackground=TEXT,
+            relief="flat", wrap="word",
+            highlightthickness=1, highlightbackground=BORDER,
+            highlightcolor=ACCENT, padx=8, pady=6
+        )
+        text_box.pack(fill="x", padx=12, pady=(0, 8))
+        text_box.focus_set()
+
+        footer = tk.Frame(card, bg=CARD)
+        footer.pack(fill="x", padx=12, pady=(0, 10))
+
+        char_var   = tk.StringVar(value="0 / 280")
+        is_private = tk.BooleanVar(value=False)
+        status_var = tk.StringVar()
+
+        tk.Label(footer, textvariable=char_var,
+                 font=F["FONT_META"], bg=CARD, fg=SUBTEXT).pack(side="left")
+        tk.Checkbutton(
+            footer, text="🔒 Private", variable=is_private,
+            bg=CARD, fg=SUBTEXT, activebackground=CARD,
+            activeforeground=TEXT, selectcolor=CARD,
+            font=F["FONT_META"], cursor="hand2", borderwidth=0, relief="flat"
+        ).pack(side="left", padx=(16, 0))
+
+        tk.Label(card, textvariable=status_var,
+                 font=F["FONT_SMALL"], bg=CARD, fg=ERROR).pack(pady=(0, 6))
+
+        def on_key(_event=None):
+            n = len(text_box.get("1.0", "end-1c"))
+            char_var.set(f"{n} / 280")
+            status_var.set("" if n <= 280 else "Post is too long.")
+
+        def submit():
+            content = text_box.get("1.0", "end-1c").strip()
+            if not content:
+                status_var.set("Write something first.")
+                return
+            if len(content) > 280:
+                status_var.set("Post is too long (max 280 characters).")
+                return
+            db.create_post(self.u_id, content, int(is_private.get()))
+            self._show_feed()
+
+        text_box.bind("<KeyRelease>", on_key)
+        text_box.bind("<Control-Return>", lambda e: submit())
+
+        tk.Button(
+            footer, text="Post", command=submit,
+            bg=ACCENT, fg="white",
+            activebackground=ACCENT_HOV, activeforeground="white",
+            relief="flat", font=F["FONT_BTN"], cursor="hand2",
+            padx=20, pady=4, borderwidth=0
+        ).pack(side="right")
+
     def _show_profile(self):
         self.app.close_comments()
         self.app.close_switcher()
         self._clear_content()
         ProfilePanel(self._content_frame, self.u_id, self.u_id,
                      viewer_u_id=self.u_id,
-                     on_back=self._show_feed)
+                     on_back=self._show_feed,
+                     app=self.app)
 
     # ── Tab bar ───────────────────────────────────────────────────────────────
 
     _TABS = [
         ("for_you",  "For You"),
-        ("my_posts", "My Posts"),
-        ("private",  "Private"),
         ("discover", "Discover"),
         ("top",      "Top"),
     ]
@@ -333,86 +420,14 @@ class MainScreen(tk.Frame):
         refresh_btn.bind("<Enter>", lambda e: refresh_btn.configure(fg=TEXT))
         refresh_btn.bind("<Leave>", lambda e: refresh_btn.configure(fg=SUBTEXT))
 
-    # ── Post composer ─────────────────────────────────────────────────────────
-
-    def _build_composer(self):
-        outer = tk.Frame(self._content_frame, bg=BG)
-        outer.pack(fill="x", padx=30, pady=(16, 4))
-
-        card = tk.Frame(outer, bg=CARD,
-                        highlightthickness=1, highlightbackground=BORDER)
-        card.pack(fill="x")
-
-        hdr = tk.Frame(card, bg=CARD)
-        hdr.pack(fill="x", padx=12, pady=(12, 6))
-
-        clr = avatar_color(self.username)
-        av  = tk.Canvas(hdr, width=30, height=30, bg=CARD, highlightthickness=0)
-        av.pack(side="left")
-        av.create_oval(1, 1, 29, 29, fill=clr, outline="")
-        av.create_text(15, 15, text=self.username[0].upper(),
-                       fill="white", font=F["FONT_AV_MD"])
-
-        tk.Label(hdr, text=f"What's on your mind, @{self.username}?",
-                 font=F["FONT_SMALL"], bg=CARD, fg=SUBTEXT).pack(side="left", padx=(10, 0))
-
-        self._composer_text = tk.Text(
-            card, height=3, font=F["FONT_POST"],
-            bg=ENTRY_BG, fg=TEXT, insertbackground=TEXT,
-            relief="flat", wrap="word",
-            highlightthickness=1, highlightbackground=BORDER,
-            highlightcolor=ACCENT, padx=8, pady=6
-        )
-        self._composer_text.pack(fill="x", padx=12, pady=(0, 8))
-
-        footer = tk.Frame(card, bg=CARD)
-        footer.pack(fill="x", padx=12, pady=(0, 10))
-
-        self._char_var = tk.StringVar(value="0 / 280")
-        tk.Label(footer, textvariable=self._char_var,
-                 font=F["FONT_META"], bg=CARD, fg=SUBTEXT).pack(side="left")
-
-        self._composer_text.bind("<KeyRelease>", self._on_composer_key)
-
-        self._is_private = tk.BooleanVar(value=(self._current_feed == "private"))
-        tk.Checkbutton(
-            footer, text="🔒 Private",
-            variable=self._is_private,
-            bg=CARD, fg=SUBTEXT, activebackground=CARD,
-            activeforeground=TEXT, selectcolor=CARD,
-            font=F["FONT_META"], cursor="hand2", borderwidth=0, relief="flat"
-        ).pack(side="left", padx=(16, 0))
-
-        tk.Button(
-            footer, text="Post", command=self._submit_post,
+        new_post_btn = tk.Button(
+            nav, text="＋  New Post", command=self._show_compose,
             bg=ACCENT, fg="white",
             activebackground=ACCENT_HOV, activeforeground="white",
-            relief="flat", font=F["FONT_BTN"], cursor="hand2",
-            padx=20, pady=4, borderwidth=0
-        ).pack(side="right")
-
-        self._composer_status = tk.StringVar()
-        tk.Label(card, textvariable=self._composer_status,
-                 font=F["FONT_SMALL"], bg=CARD, fg=ERROR).pack(pady=(0, 6))
-
-    def _on_composer_key(self, _event=None):
-        n = len(self._composer_text.get("1.0", "end-1c"))
-        self._char_var.set(f"{n} / 280")
-        self._composer_status.set("" if n <= 280 else "Post is too long.")
-
-    def _submit_post(self):
-        content = self._composer_text.get("1.0", "end-1c").strip()
-        if not content:
-            self._composer_status.set("Write something first.")
-            return
-        if len(content) > 280:
-            self._composer_status.set("Post is too long (max 280 characters).")
-            return
-        db.create_post(self.u_id, content, int(self._is_private.get()))
-        self._composer_text.delete("1.0", "end")
-        self._char_var.set("0 / 280")
-        self._composer_status.set("")
-        self.refresh()
+            relief="flat", font=F["FONT_SMALL"], cursor="hand2", borderwidth=0,
+            padx=14, pady=4
+        )
+        new_post_btn.pack(side="left", padx=(10, 0))
 
     # ── Feed area ─────────────────────────────────────────────────────────────
 
@@ -444,47 +459,27 @@ class MainScreen(tk.Frame):
         for w in self._feed_frame.winfo_children():
             w.destroy()
 
-        if self._current_feed == "for_you":
-            posts        = db.get_feed_posts(self.u_id)
-            section      = "For You"
-            empty_msg    = "Nothing here yet — follow some people to see their posts."
-            use_profile_card = False
-        elif self._current_feed == "my_posts":
-            posts        = db.get_user_posts(self.u_id, self.u_id)
-            section      = "My Posts"
-            empty_msg    = "You haven't posted anything yet."
-            use_profile_card = True
-        else:  # private
-            posts        = db.get_private_posts(self.u_id)
-            section      = "Private Posts"
-            empty_msg    = "You have no private posts."
-            use_profile_card = True
+        posts = db.get_feed_posts(self.u_id)
 
         if not posts:
             tk.Label(
-                self._feed_frame, text=empty_msg,
+                self._feed_frame,
+                text="Nothing here yet — follow some people to see their posts.",
                 font=F["FONT_SMALL"], bg=BG, fg=SUBTEXT, pady=60
             ).pack()
             return
 
         hdr = tk.Frame(self._feed_frame, bg=BG)
         hdr.pack(fill="x", padx=30, pady=(18, 6))
-        tk.Label(hdr, text=section, font=F["FONT_SECTION"],
+        tk.Label(hdr, text="For You", font=F["FONT_SECTION"],
                  bg=BG, fg=TEXT).pack(side="left")
         tk.Label(hdr, text=f"{len(posts)} posts", font=F["FONT_SMALL"],
                  bg=BG, fg=SUBTEXT).pack(side="left", padx=(8, 0))
 
-        if use_profile_card:
-            for row in posts:
-                ProfilePostCard(
-                    self._feed_frame, row, self.u_id,
-                    is_owner=True, on_change=self.refresh
-                )
-        else:
-            from pizzaparty.panels import PostCard
-            for row in posts:
-                PostCard(self._feed_frame, row, self.u_id,
-                         on_reaction=self.refresh, app=self.app)
+        from pizzaparty.panels import PostCard
+        for row in posts:
+            PostCard(self._feed_frame, row, self.u_id,
+                     on_reaction=self.refresh, app=self.app)
 
         tk.Frame(self._feed_frame, bg=BG, height=24).pack()
 
@@ -492,13 +487,14 @@ class MainScreen(tk.Frame):
 
 class ProfilePanel(tk.Frame):
     def __init__(self, parent, profile_u_id: int, owner_u_id: int,
-                 viewer_u_id: int, on_back):
+                 viewer_u_id: int, on_back, app):
         super().__init__(parent, bg=BG)
         self.pack(fill="both", expand=True)
         self.profile_u_id = profile_u_id
         self.owner_u_id   = owner_u_id
         self.viewer_u_id  = viewer_u_id
         self.on_back      = on_back
+        self.app          = app
         self._build()
 
     def _build(self):
@@ -516,17 +512,6 @@ class ProfilePanel(tk.Frame):
             lambda e: canvas.itemconfig(win_id, width=e.width))
         canvas.bind_all("<MouseWheel>",
             lambda e: canvas.yview_scroll(int(-1 * (e.delta / 120)), "units"))
-
-        back_row = tk.Frame(inner, bg=BG)
-        back_row.pack(fill="x", padx=30, pady=(14, 0))
-        back_btn = tk.Button(
-            back_row, text="← Back to Feed", command=self.on_back,
-            bg=BG, fg=SUBTEXT, activebackground=BG, activeforeground=TEXT,
-            relief="flat", font=F["FONT_SMALL"], cursor="hand2", borderwidth=0
-        )
-        back_btn.pack(side="left")
-        back_btn.bind("<Enter>", lambda e: back_btn.configure(fg=TEXT))
-        back_btn.bind("<Leave>", lambda e: back_btn.configure(fg=SUBTEXT))
 
         info = db.get_profile(self.profile_u_id)
         if not info:
@@ -567,27 +552,64 @@ class ProfilePanel(tk.Frame):
             tk.Label(block, text=lbl,
                      font=F["FONT_META"], bg=PANEL, fg=SUBTEXT).pack(anchor="w")
 
-        ph = tk.Frame(inner, bg=BG)
-        ph.pack(fill="x", padx=30, pady=(18, 6))
-        tk.Label(ph, text="Posts", font=F["FONT_SECTION"],
-                 bg=BG, fg=TEXT).pack(side="left")
+        self._profile_tab      = "posts"
+        self._profile_tab_btns = {}
+        is_owner = (self.profile_u_id == self.owner_u_id)
 
+        tab_bar = tk.Frame(inner, bg=BG)
+        tab_bar.pack(fill="x", padx=30, pady=(18, 0))
+
+        profile_tabs = [("posts", "Posts")]
+        if is_owner:
+            profile_tabs.append(("private", "Private"))
+
+        for tab_id, label in profile_tabs:
+            btn = tk.Button(
+                tab_bar, text=label,
+                command=lambda tid=tab_id: self._switch_profile_tab(tid),
+                relief="flat", font=F["FONT_LABEL"], cursor="hand2",
+                padx=14, pady=4, borderwidth=0
+            )
+            btn.pack(side="left")
+            self._profile_tab_btns[tab_id] = btn
+
+        self._update_profile_tab_styles()
         tk.Frame(inner, bg=BORDER, height=1).pack(fill="x", padx=30)
 
         self._post_list_container = inner
         self._render_post_list(inner)
         tk.Frame(inner, bg=BG, height=24).pack()
 
+    def _switch_profile_tab(self, tab_id: str):
+        self._profile_tab = tab_id
+        self._update_profile_tab_styles()
+        self._render_post_list(self._post_list_container)
+
+    def _update_profile_tab_styles(self):
+        for tid, btn in self._profile_tab_btns.items():
+            active = (tid == self._profile_tab)
+            btn.configure(
+                bg=ACCENT if active else BG,
+                fg="white" if active else SUBTEXT,
+                activebackground=ACCENT_HOV, activeforeground="white"
+            )
+
     def _render_post_list(self, container):
         for w in getattr(self, "_post_card_widgets", []):
             w.destroy()
         self._post_card_widgets = []
 
-        posts    = db.get_user_posts(self.profile_u_id, self.viewer_u_id)
         is_owner = (self.profile_u_id == self.owner_u_id)
 
+        if getattr(self, "_profile_tab", "posts") == "private":
+            posts     = db.get_private_posts(self.profile_u_id)
+            empty_msg = "No private posts."
+        else:
+            posts     = db.get_user_posts(self.profile_u_id, self.viewer_u_id)
+            empty_msg = "No posts yet."
+
         if not posts:
-            lbl = tk.Label(container, text="No posts yet.", font=F["FONT_SMALL"],
+            lbl = tk.Label(container, text=empty_msg, font=F["FONT_SMALL"],
                            bg=BG, fg=SUBTEXT)
             lbl.pack(pady=30)
             self._post_card_widgets.append(lbl)
@@ -599,7 +621,8 @@ class ProfilePanel(tk.Frame):
                 card = ProfilePostCard(
                     container, row, self.viewer_u_id,
                     is_owner=is_owner,
-                    on_change=self._render_post_list_refresh
+                    on_change=self._render_post_list_refresh,
+                    app=self.app
                 )
                 self._post_card_widgets.append(card)
 
@@ -610,7 +633,7 @@ class ProfilePanel(tk.Frame):
 
 class ProfilePostCard(tk.Frame):
     def __init__(self, parent, row, viewer_u_id: int,
-                 is_owner: bool = False, on_change=None):
+                 is_owner: bool = False, on_change=None, app=None):
         super().__init__(parent, bg=CARD,
                          highlightthickness=1, highlightbackground=BORDER)
         self.pack(fill="x", padx=30, pady=(0, 10))
@@ -622,6 +645,7 @@ class ProfilePostCard(tk.Frame):
         self.viewer_u_id = viewer_u_id
         self.is_owner    = is_owner
         self.on_change   = on_change
+        self.app         = app
         self._editing    = False
         self._build()
 
@@ -724,10 +748,24 @@ class ProfilePostCard(tk.Frame):
         tk.Label(strip, text=f"▼  {self.dlikes}",
                  font=F["FONT_HANDLE"], bg=CARD, fg=dc
                  ).pack(side="left", padx=(8, 0))
-        tk.Label(strip,
-                 text=f"💬  {self.n_comments}  comment{'s' if self.n_comments != 1 else ''}",
-                 font=F["FONT_META"], bg=CARD, fg=SUBTEXT
-                 ).pack(side="left", padx=(12, 0))
+
+        comment_btn = tk.Button(
+            strip,
+            text=f"💬  {self.n_comments}  comment{'s' if self.n_comments != 1 else ''}",
+            command=self._open_comments,
+            bg=CARD, fg=SUBTEXT,
+            activebackground=CARD_HOV, activeforeground=TEXT,
+            relief="flat", font=F["FONT_META"], cursor="hand2",
+            borderwidth=0, padx=10, pady=6
+        )
+        comment_btn.pack(side="left", padx=(2, 0))
+        comment_btn.bind("<Enter>", lambda e: comment_btn.configure(fg=TEXT))
+        comment_btn.bind("<Leave>", lambda e: comment_btn.configure(fg=SUBTEXT))
+
+    def _open_comments(self):
+        if self.app:
+            self.app.open_comments(self.post_id, self.viewer_u_id,
+                                   on_close=self.on_change)
 
     def _start_edit(self):
         self._editing = True

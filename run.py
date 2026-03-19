@@ -4,7 +4,14 @@ from pizzaparty.db import get_conn
 
 
 def resolve_users():
-    """Return list of (u_id, username) for all --Name args, in order."""
+    """Return list of (u_id, username) for all --Name args, in order.
+    --admin loads every active user in the DB."""
+    if "--admin" in sys.argv[1:]:
+        with get_conn() as conn:
+            return conn.execute(
+                "SELECT u_id, username FROM Users WHERE is_deleted = 0 ORDER BY u_id"
+            ).fetchall()
+
     users = []
     for arg in sys.argv[1:]:
         if arg.startswith("--"):

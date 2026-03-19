@@ -147,7 +147,7 @@ class AccountSwitcherPanel(tk.Frame):
             if wx <= event.x_root <= wx + ww and wy <= event.y_root <= wy + wh:
                 return
         except Exception:
-            pass
+            return
         self.app.close_switcher()
 
     def _build(self):
