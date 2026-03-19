@@ -17,6 +17,7 @@ class App(tk.Tk):
         self.minsize(min_w, min_h)
         self._comments_panel = None
         self._switcher_panel = None
+        self._main_screen    = None
         self._resize_job     = None
 
         self._center(420, 520)
@@ -102,7 +103,11 @@ class App(tk.Tk):
         self.resizable(True, True)
         self.clear()
         from pizzaparty.screens import MainScreen
-        MainScreen(self, u_id, username)
+        self._main_screen = MainScreen(self, u_id, username)
+
+    def open_profile(self, profile_u_id: int):
+        if self._main_screen and self._main_screen.winfo_exists():
+            self._main_screen.show_other_profile(profile_u_id)
 
     # ── Account switcher management ───────────────────────────────────────────
 

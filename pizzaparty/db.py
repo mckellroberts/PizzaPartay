@@ -86,6 +86,35 @@ def unfollow(follower_u_id: int, follows_u_id: int):
             (follower_u_id, follows_u_id)
         )
 
+def get_followers(u_id: int):
+    """Returns (u_id, username) for every user that follows u_id."""
+    with get_conn() as conn:
+        return conn.execute("""
+            SELECT u.u_id, u.username
+            FROM   Follows_ledger f
+            JOIN   Users u ON u.u_id = f.follower_u_id
+            WHERE  f.follows_u_id = ? AND u.is_deleted = 0
+            ORDER  BY u.username
+        """, (u_id,)).fetchall()
+
+def get_following(u_id: int):
+    """Returns (u_id, username) for every user that u_id follows."""
+    with get_conn() as conn:
+        return conn.execute("""
+            SELECT u.u_id, u.username
+            FROM   Follows_ledger f
+            JOIN   Users u ON u.u_id = f.follows_u_id
+            WHERE  f.follower_u_id = ? AND u.is_deleted = 0
+            ORDER  BY u.username
+        """, (u_id,)).fetchall()
+
+def is_following(follower_u_id: int, follows_u_id: int) -> bool:
+    with get_conn() as conn:
+        return conn.execute(
+            "SELECT 1 FROM Follows_ledger WHERE follower_u_id = ? AND follows_u_id = ?",
+            (follower_u_id, follows_u_id)
+        ).fetchone() is not None
+
 def block(blocker_u_id: int, blocks_u_id: int):
     with get_conn() as conn:
         conn.execute(
@@ -197,9 +226,9 @@ def get_user_posts(profile_u_id: int, viewer_u_id: int):
             WHERE  p.u_id      = ?
               AND  p.is_deleted  = 0
               AND  p.is_archived = 0
-              AND  (p.is_private = 0 OR p.u_id = ?)
+              AND  p.is_private = 0
             ORDER  BY p.created_at DESC
-        """, (viewer_u_id, profile_u_id, viewer_u_id)).fetchall()
+        """, (viewer_u_id, profile_u_id)).fetchall()
 
 # ── Posts ─────────────────────────────────────────────────────────────────────
 
@@ -260,7 +289,7 @@ def remove_post_reaction(post_id: int, u_id: int):
 def get_post_header(post_id: int, viewer_u_id: int):
     with get_conn() as conn:
         return conn.execute("""
-            SELECT p.post_id, u.username, p.content, p.created_at, p.been_edited
+            SELECT p.post_id, p.u_id, u.username, p.content, p.created_at, p.been_edited
             FROM   Posts p JOIN Users u ON p.u_id = u.u_id
             WHERE  p.post_id = ?
         """, (post_id,)).fetchone()
@@ -339,3 +368,88 @@ def remove_comment_reaction(comment_id: int, u_id: int):
             "DELETE FROM Comments_ledger WHERE comment_id = ? AND u_id = ?",
             (comment_id, u_id)
         )
+
+# ── Notifications ─────────────────────────────────────────────────────────────
+
+def create_notification(u_id: int, kind: str, from_u_id: int, post_id=None):
+    with get_conn() as conn:
+        conn.execute(
+            "INSERT INTO Notifications (u_id, kind, from_u_id, post_id) VALUES (?, ?, ?, ?)",
+            (u_id, kind, from_u_id, post_id)
+        )
+
+def get_notifications(u_id: int):
+    with get_conn() as conn:
+        return conn.execute("""
+            SELECT n.notif_id, n.kind, n.from_u_id, u.username,
+                   n.post_id, n.created_at, n.is_read
+            FROM   Notifications n
+            JOIN   Users u ON u.u_id = n.from_u_id
+            WHERE  n.u_id = ?
+            ORDER  BY n.created_at DESC
+            LIMIT  50
+        """, (u_id,)).fetchall()
+
+def mark_notifications_read(u_id: int):
+    with get_conn() as conn:
+        conn.execute(
+            "UPDATE Notifications SET is_read = 1 WHERE u_id = ?", (u_id,)
+        )
+
+# ── Interesting queries ───────────────────────────────────────────────────────
+
+def get_suggested_follows(u_id: int):
+    """Accounts you don't follow whose follower-base overlaps most with yours."""
+    with get_conn() as conn:
+        return conn.execute("""
+            SELECT f2.follower_u_id, u.username, COUNT(*) AS overlap
+            FROM   Follows_ledger f1
+            JOIN   Follows_ledger f2 ON f2.follows_u_id = f1.follows_u_id
+            JOIN   Users u ON u.u_id = f2.follower_u_id
+            WHERE  f1.follower_u_id = ?
+              AND  f2.follower_u_id != ?
+              AND  f2.follower_u_id NOT IN (
+                       SELECT follows_u_id FROM Follows_ledger WHERE follower_u_id = ?)
+              AND  u.is_deleted = 0
+            GROUP  BY f2.follower_u_id
+            ORDER  BY overlap DESC
+            LIMIT  10
+        """, (u_id, u_id, u_id)).fetchall()
+
+def get_viral_posts(u_id: int):
+    """Public posts liked by people you follow, from accounts you don't follow."""
+    with get_conn() as conn:
+        return conn.execute("""
+            SELECT p.post_id, p.u_id, u.username, p.content, p.like_count,
+                   COUNT(pl.u_id) AS liked_by_follows
+            FROM   Posts p
+            JOIN   Users u ON u.u_id = p.u_id
+            JOIN   Posts_ledger pl ON pl.post_id = p.post_id AND pl.is_like = 1
+            JOIN   Follows_ledger f ON f.follows_u_id = pl.u_id
+                                   AND f.follower_u_id = ?
+            WHERE  p.u_id NOT IN (
+                       SELECT follows_u_id FROM Follows_ledger WHERE follower_u_id = ?)
+              AND  p.u_id != ?
+              AND  p.is_deleted = 0 AND p.is_private = 0
+            GROUP  BY p.post_id
+            ORDER  BY liked_by_follows DESC, p.like_count DESC
+            LIMIT  20
+        """, (u_id, u_id, u_id)).fetchall()
+
+def get_top_posts(u_id: int):
+    """Most-liked public posts from the last 48 hours."""
+    with get_conn() as conn:
+        return conn.execute("""
+            SELECT p.post_id, p.u_id, u.username, p.content, p.created_at,
+                   p.like_count, p.dlike_count, p.comment_count, p.been_edited,
+                   COALESCE(pl.is_like,  0),
+                   COALESCE(pl.is_dlike, 0)
+            FROM   Posts p
+            JOIN   Users u ON u.u_id = p.u_id
+            LEFT JOIN Posts_ledger pl ON pl.post_id = p.post_id AND pl.u_id = ?
+            WHERE  p.is_deleted = 0 AND p.is_private = 0 AND p.is_archived = 0
+              AND  u.is_deleted = 0
+              AND  p.created_at >= datetime('now', '-48 hours')
+            ORDER  BY p.like_count DESC, p.comment_count DESC
+            LIMIT  30
+        """, (u_id,)).fetchall()

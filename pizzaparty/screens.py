@@ -188,6 +188,10 @@ class MainScreen(tk.Frame):
         if self._current_feed == "for_you":
             self._build_feed_area()
             self.refresh()
+        elif self._current_feed == "discover":
+            self._build_discover()
+        elif self._current_feed == "top":
+            self._build_top()
         else:
             tk.Label(
                 self._content_frame,
@@ -285,13 +289,212 @@ class MainScreen(tk.Frame):
         ).pack(side="right")
 
     def _show_profile(self):
+        self.show_other_profile(self.u_id)
+
+    def show_other_profile(self, profile_u_id: int):
         self.app.close_comments()
         self.app.close_switcher()
         self._clear_content()
-        ProfilePanel(self._content_frame, self.u_id, self.u_id,
+        ProfilePanel(self._content_frame, profile_u_id, self.u_id,
                      viewer_u_id=self.u_id,
                      on_back=self._show_feed,
                      app=self.app)
+
+    # ── Discover tab (suggested follows) ─────────────────────────────────────
+
+    def _build_discover(self):
+        outer = tk.Frame(self._content_frame, bg=BG)
+        outer.pack(fill="both", expand=True)
+
+        canvas = tk.Canvas(outer, bg=BG, highlightthickness=0)
+        sb     = tk.Scrollbar(outer, orient="vertical", command=canvas.yview)
+        canvas.configure(yscrollcommand=sb.set)
+        sb.pack(side="right", fill="y")
+        canvas.pack(side="left", fill="both", expand=True)
+
+        inner  = tk.Frame(canvas, bg=BG)
+        win_id = canvas.create_window((0, 0), window=inner, anchor="nw")
+        inner.bind("<Configure>",
+            lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
+        canvas.bind("<Configure>",
+            lambda e: canvas.itemconfig(win_id, width=e.width))
+
+        # ── Suggested follows ─────────────────────────────────────────────────
+        hdr = tk.Frame(inner, bg=BG)
+        hdr.pack(fill="x", padx=30, pady=(18, 4))
+        tk.Label(hdr, text="Suggested Follows",
+                 font=F["FONT_SECTION"], bg=BG, fg=TEXT).pack(side="left")
+
+        suggest_rows = db.get_suggested_follows(self.u_id)
+        if not suggest_rows:
+            tk.Label(inner,
+                     text="No suggestions yet — follow more people to unlock this.",
+                     font=F["FONT_SMALL"], bg=BG, fg=SUBTEXT).pack(anchor="w", padx=30, pady=(0, 8))
+        else:
+            for (suggested_u_id, username, overlap) in suggest_rows:
+                card = tk.Frame(inner, bg=CARD,
+                                highlightthickness=1, highlightbackground=BORDER)
+                card.pack(fill="x", padx=30, pady=(0, 8))
+
+                row_inner = tk.Frame(card, bg=CARD)
+                row_inner.pack(fill="x", padx=14, pady=10)
+
+                clr = avatar_color(username)
+                av  = tk.Canvas(row_inner, width=32, height=32, bg=CARD, highlightthickness=0,
+                                cursor="hand2")
+                av.pack(side="left")
+                av.create_oval(1, 1, 31, 31, fill=clr, outline="")
+                av.create_text(16, 16, text=username[0].upper(),
+                               fill="white", font=F["FONT_AV_MD"])
+
+                info = tk.Frame(row_inner, bg=CARD, cursor="hand2")
+                info.pack(side="left", padx=(10, 0))
+                uname_lbl = tk.Label(info, text=f"@{username}",
+                                     font=F["FONT_HANDLE"], bg=CARD, fg=TEXT, cursor="hand2")
+                uname_lbl.pack(anchor="w")
+                tk.Label(info,
+                         text=f"{overlap} mutual follower{'s' if overlap != 1 else ''}",
+                         font=F["FONT_META"], bg=CARD, fg=SUBTEXT).pack(anchor="w")
+
+                def _make_open(uid):
+                    return lambda _e=None: self.app.open_profile(uid)
+
+                _open = _make_open(suggested_u_id)
+                av.bind("<Button-1>", _open)
+                info.bind("<Button-1>", _open)
+                uname_lbl.bind("<Button-1>", _open)
+                uname_lbl.bind("<Enter>", lambda e, l=uname_lbl: l.configure(fg=ACCENT))
+                uname_lbl.bind("<Leave>", lambda e, l=uname_lbl: l.configure(fg=TEXT))
+
+                _fol = db.is_following(self.u_id, suggested_u_id)
+                fbtn = tk.Button(
+                    row_inner,
+                    text="Following" if _fol else "Follow",
+                    bg=BORDER if _fol else ACCENT,
+                    fg=TEXT   if _fol else "white",
+                    activebackground=BORDER, activeforeground=TEXT,
+                    relief="flat", font=F["FONT_BTN"], cursor="hand2",
+                    borderwidth=0, padx=14, pady=4
+                )
+                fbtn.pack(side="right", anchor="center")
+
+                def _make_toggle(btn, uid):
+                    state = {"following": db.is_following(self.u_id, uid)}
+                    def toggle():
+                        if state["following"]:
+                            db.unfollow(self.u_id, uid)
+                            state["following"] = False
+                            btn.configure(text="Follow", bg=ACCENT, fg="white")
+                        else:
+                            db.follow(self.u_id, uid)
+                            state["following"] = True
+                            btn.configure(text="Following", bg=BORDER, fg=TEXT)
+                    return toggle
+
+                fbtn.configure(command=_make_toggle(fbtn, suggested_u_id))
+
+        # ── Viral posts ───────────────────────────────────────────────────────
+        tk.Frame(inner, bg=BORDER, height=1).pack(fill="x", padx=30, pady=(10, 0))
+        hdr2 = tk.Frame(inner, bg=BG)
+        hdr2.pack(fill="x", padx=30, pady=(14, 4))
+        tk.Label(hdr2, text="Going Viral",
+                 font=F["FONT_SECTION"], bg=BG, fg=TEXT).pack(side="left")
+        tk.Label(hdr2, text="liked by people you follow, from accounts you don't",
+                 font=F["FONT_SMALL"], bg=BG, fg=SUBTEXT).pack(side="left", padx=(10, 0))
+
+        viral_rows = db.get_viral_posts(self.u_id)
+        if not viral_rows:
+            tk.Label(inner,
+                     text="Nothing viral for you yet — follow more people.",
+                     font=F["FONT_SMALL"], bg=BG, fg=SUBTEXT).pack(anchor="w", padx=30, pady=(0, 8))
+        else:
+            for (post_id, post_u_id, username, content, like_count, liked_by_follows) in viral_rows:
+                card = tk.Frame(inner, bg=CARD,
+                                highlightthickness=1, highlightbackground=BORDER)
+                card.pack(fill="x", padx=30, pady=(0, 10))
+
+                chdr = tk.Frame(card, bg=CARD)
+                chdr.pack(fill="x", padx=14, pady=(10, 0))
+
+                clr = avatar_color(username)
+                av  = tk.Canvas(chdr, width=30, height=30, bg=CARD, highlightthickness=0,
+                                cursor="hand2")
+                av.pack(side="left")
+                av.create_oval(1, 1, 29, 29, fill=clr, outline="")
+                av.create_text(15, 15, text=username[0].upper(),
+                               fill="white", font=F["FONT_AV_MD"])
+
+                meta = tk.Frame(chdr, bg=CARD, cursor="hand2")
+                meta.pack(side="left", padx=(10, 0))
+                vname_lbl = tk.Label(meta, text=f"@{username}",
+                                     font=F["FONT_HANDLE"], bg=CARD, fg=TEXT, cursor="hand2")
+                vname_lbl.pack(anchor="w")
+                tk.Label(meta,
+                         text=f"{liked_by_follows} of your follows liked this",
+                         font=F["FONT_META"], bg=CARD, fg=SUBTEXT).pack(anchor="w")
+
+                def _make_vopen(uid):
+                    return lambda _e=None: self.app.open_profile(uid)
+
+                _vopen = _make_vopen(post_u_id)
+                av.bind("<Button-1>", _vopen)
+                meta.bind("<Button-1>", _vopen)
+                vname_lbl.bind("<Button-1>", _vopen)
+                vname_lbl.bind("<Enter>", lambda e, l=vname_lbl: l.configure(fg=ACCENT))
+                vname_lbl.bind("<Leave>", lambda e, l=vname_lbl: l.configure(fg=TEXT))
+
+                content_lbl = tk.Label(
+                    card, text=content, font=F["FONT_POST"],
+                    bg=CARD, fg=TEXT, wraplength=560, justify="left", anchor="w"
+                )
+                content_lbl.pack(fill="x", padx=14, pady=(8, 0))
+                auto_wrap(content_lbl, padding=60)
+
+                tk.Frame(card, bg=BORDER, height=1).pack(fill="x", pady=(8, 0))
+                strip = tk.Frame(card, bg=CARD)
+                strip.pack(fill="x", padx=12, pady=5)
+                tk.Label(strip, text=f"▲  {like_count}",
+                         font=F["FONT_HANDLE"], bg=CARD, fg=LIKE_CLR).pack(side="left", padx=(4, 0))
+
+        tk.Frame(inner, bg=BG, height=24).pack()
+
+    # ── Top tab (popular posts last 48 h) ─────────────────────────────────────
+
+    def _build_top(self):
+        outer = tk.Frame(self._content_frame, bg=BG)
+        outer.pack(fill="both", expand=True)
+
+        canvas = tk.Canvas(outer, bg=BG, highlightthickness=0)
+        sb     = tk.Scrollbar(outer, orient="vertical", command=canvas.yview)
+        canvas.configure(yscrollcommand=sb.set)
+        sb.pack(side="right", fill="y")
+        canvas.pack(side="left", fill="both", expand=True)
+
+        inner  = tk.Frame(canvas, bg=BG)
+        win_id = canvas.create_window((0, 0), window=inner, anchor="nw")
+        inner.bind("<Configure>",
+            lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
+        canvas.bind("<Configure>",
+            lambda e: canvas.itemconfig(win_id, width=e.width))
+
+        hdr = tk.Frame(inner, bg=BG)
+        hdr.pack(fill="x", padx=30, pady=(18, 6))
+        tk.Label(hdr, text="Top Posts", font=F["FONT_SECTION"],
+                 bg=BG, fg=TEXT).pack(side="left")
+        tk.Label(hdr, text="most liked public posts in the last 48 hours",
+                 font=F["FONT_SMALL"], bg=BG, fg=SUBTEXT).pack(side="left", padx=(10, 0))
+
+        rows = db.get_top_posts(self.u_id)
+        if not rows:
+            tk.Label(inner,
+                     text="No posts in the last 48 hours yet.",
+                     font=F["FONT_SMALL"], bg=BG, fg=SUBTEXT, pady=60).pack()
+        else:
+            from pizzaparty.panels import PostCard
+            for row in rows:
+                PostCard(inner, row, self.u_id, on_reaction=lambda: None, app=self.app)
+
+        tk.Frame(inner, bg=BG, height=24).pack()
 
     # ── Tab bar ───────────────────────────────────────────────────────────────
 
@@ -540,17 +743,66 @@ class ProfilePanel(tk.Frame):
         stats_row = tk.Frame(info_box, bg=PANEL)
         stats_row.pack(anchor="w", pady=(6, 0))
 
-        for val, lbl in [(followers, "followers"), (follows, "following"), (post_count, "posts")]:
-            block = tk.Frame(stats_row, bg=PANEL)
+        def _stat_block(parent, val, lbl, cmd=None):
+            block = tk.Frame(parent, bg=PANEL,
+                             cursor="hand2" if cmd else "")
             block.pack(side="left", padx=(0, 20))
-            tk.Label(block, text=str(val),
-                     font=F["FONT_STATS_VAL"], bg=PANEL, fg=TEXT).pack(anchor="w")
-            tk.Label(block, text=lbl,
-                     font=F["FONT_META"], bg=PANEL, fg=SUBTEXT).pack(anchor="w")
+            val_lbl = tk.Label(block, text=str(val),
+                               font=F["FONT_STATS_VAL"], bg=PANEL, fg=TEXT)
+            val_lbl.pack(anchor="w")
+            txt_lbl = tk.Label(block, text=lbl,
+                               font=F["FONT_META"], bg=PANEL,
+                               fg=ACCENT if cmd else SUBTEXT)
+            txt_lbl.pack(anchor="w")
+            if cmd:
+                for w in (block, val_lbl, txt_lbl):
+                    w.bind("<Button-1>", lambda e: cmd())
+                    w.bind("<Enter>", lambda e, v=val_lbl, t=txt_lbl: (
+                        v.configure(fg=ACCENT), t.configure(fg=ACCENT_HOV)))
+                    w.bind("<Leave>", lambda e, v=val_lbl, t=txt_lbl: (
+                        v.configure(fg=TEXT), t.configure(fg=ACCENT)))
+
+        def _show_followers():
+            UserListPanel(self._content_frame, self.profile_u_id, "followers",
+                          self.viewer_u_id, on_back=self._rebuild, app=self.app)
+
+        def _show_following():
+            UserListPanel(self._content_frame, self.profile_u_id, "following",
+                          self.viewer_u_id, on_back=self._rebuild, app=self.app)
+
+        _stat_block(stats_row, followers,   "followers", _show_followers if followers  else None)
+        _stat_block(stats_row, follows,     "following", _show_following if follows    else None)
+        _stat_block(stats_row, post_count,  "posts")
+
+        is_owner = (self.profile_u_id == self.owner_u_id)
+        if not is_owner:
+            _following = db.is_following(self.viewer_u_id, self.profile_u_id)
+            follow_btn = tk.Button(
+                hero_body,
+                text="Following" if _following else "Follow",
+                bg=BORDER if _following else ACCENT,
+                fg=TEXT   if _following else "white",
+                activebackground=BORDER, activeforeground=TEXT,
+                relief="flat", font=F["FONT_BTN"], cursor="hand2",
+                borderwidth=0, padx=16, pady=6
+            )
+            follow_btn.pack(side="right", anchor="center")
+
+            def _toggle_follow(btn=follow_btn):
+                nonlocal _following
+                if _following:
+                    db.unfollow(self.viewer_u_id, self.profile_u_id)
+                    _following = False
+                    btn.configure(text="Follow", bg=ACCENT, fg="white")
+                else:
+                    db.follow(self.viewer_u_id, self.profile_u_id)
+                    _following = True
+                    btn.configure(text="Following", bg=BORDER, fg=TEXT)
+
+            follow_btn.configure(command=_toggle_follow)
 
         self._profile_tab      = "posts"
         self._profile_tab_btns = {}
-        is_owner = (self.profile_u_id == self.owner_u_id)
 
         tab_bar = tk.Frame(inner, bg=BG)
         tab_bar.pack(fill="x", padx=30, pady=(18, 0))
@@ -575,6 +827,11 @@ class ProfilePanel(tk.Frame):
         self._post_list_container = inner
         self._render_post_list(inner)
         tk.Frame(inner, bg=BG, height=24).pack()
+
+    def _rebuild(self):
+        for w in self.winfo_children():
+            w.destroy()
+        self._build()
 
     def _switch_profile_tab(self, tab_id: str):
         self._profile_tab = tab_id
@@ -624,6 +881,117 @@ class ProfilePanel(tk.Frame):
 
     def _render_post_list_refresh(self):
         self._render_post_list(self._post_list_container)
+
+# ── User list panel (followers / following) ───────────────────────────────────
+
+class UserListPanel(tk.Frame):
+    def __init__(self, parent, profile_u_id: int, kind: str,
+                 viewer_u_id: int, on_back, app):
+        super().__init__(parent, bg=BG)
+        self.pack(fill="both", expand=True)
+        self.profile_u_id = profile_u_id
+        self.kind         = kind   # "followers" or "following"
+        self.viewer_u_id  = viewer_u_id
+        self.on_back      = on_back
+        self.app          = app
+        self._build()
+
+    def _build(self):
+        canvas = tk.Canvas(self, bg=BG, highlightthickness=0)
+        sb     = tk.Scrollbar(self, orient="vertical", command=canvas.yview)
+        canvas.configure(yscrollcommand=sb.set)
+        sb.pack(side="right", fill="y")
+        canvas.pack(side="left", fill="both", expand=True)
+
+        inner  = tk.Frame(canvas, bg=BG)
+        win_id = canvas.create_window((0, 0), window=inner, anchor="nw")
+        inner.bind("<Configure>",
+            lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
+        canvas.bind("<Configure>",
+            lambda e: canvas.itemconfig(win_id, width=e.width))
+
+        hdr = tk.Frame(inner, bg=BG)
+        hdr.pack(fill="x", padx=30, pady=(14, 10))
+
+        back_btn = tk.Button(
+            hdr, text="← Back", command=self.on_back,
+            bg=BG, fg=SUBTEXT, activebackground=BG, activeforeground=TEXT,
+            relief="flat", font=F["FONT_SMALL"], cursor="hand2", borderwidth=0
+        )
+        back_btn.pack(side="left")
+        back_btn.bind("<Enter>", lambda e: back_btn.configure(fg=TEXT))
+        back_btn.bind("<Leave>", lambda e: back_btn.configure(fg=SUBTEXT))
+
+        tk.Label(hdr, text=self.kind.capitalize(),
+                 font=F["FONT_SECTION"], bg=BG, fg=TEXT).pack(side="left", padx=(16, 0))
+
+        users = (db.get_followers(self.profile_u_id)
+                 if self.kind == "followers"
+                 else db.get_following(self.profile_u_id))
+
+        if not users:
+            tk.Label(inner, text=f"No {self.kind} yet.",
+                     font=F["FONT_SMALL"], bg=BG, fg=SUBTEXT).pack(pady=40)
+            return
+
+        for (u_id, username) in users:
+            card = tk.Frame(inner, bg=CARD,
+                            highlightthickness=1, highlightbackground=BORDER)
+            card.pack(fill="x", padx=30, pady=(0, 8))
+
+            row = tk.Frame(card, bg=CARD)
+            row.pack(fill="x", padx=14, pady=10)
+
+            clr = avatar_color(username)
+            av  = tk.Canvas(row, width=36, height=36, bg=CARD, highlightthickness=0,
+                            cursor="hand2")
+            av.pack(side="left")
+            av.create_oval(1, 1, 35, 35, fill=clr, outline="")
+            av.create_text(18, 18, text=username[0].upper(),
+                           fill="white", font=F["FONT_AV_MD"])
+
+            name_lbl = tk.Label(row, text=f"@{username}",
+                                font=F["FONT_HANDLE"], bg=CARD, fg=TEXT, cursor="hand2")
+            name_lbl.pack(side="left", padx=(12, 0))
+
+            def _open(_e=None, uid=u_id):
+                self.app.open_profile(uid)
+
+            av.bind("<Button-1>", _open)
+            name_lbl.bind("<Button-1>", _open)
+            name_lbl.bind("<Enter>", lambda e, l=name_lbl: l.configure(fg=ACCENT))
+            name_lbl.bind("<Leave>", lambda e, l=name_lbl: l.configure(fg=TEXT))
+
+            is_self = (u_id == self.viewer_u_id)
+            if not is_self:
+                _fol = db.is_following(self.viewer_u_id, u_id)
+                fbtn = tk.Button(
+                    row,
+                    text="Following" if _fol else "Follow",
+                    bg=BORDER if _fol else ACCENT,
+                    fg=TEXT   if _fol else "white",
+                    activebackground=BORDER, activeforeground=TEXT,
+                    relief="flat", font=F["FONT_BTN"], cursor="hand2",
+                    borderwidth=0, padx=14, pady=4
+                )
+                fbtn.pack(side="right", anchor="center")
+
+                def _make_toggle(btn, uid):
+                    state = {"following": db.is_following(self.viewer_u_id, uid)}
+                    def toggle():
+                        if state["following"]:
+                            db.unfollow(self.viewer_u_id, uid)
+                            state["following"] = False
+                            btn.configure(text="Follow", bg=ACCENT, fg="white")
+                        else:
+                            db.follow(self.viewer_u_id, uid)
+                            state["following"] = True
+                            btn.configure(text="Following", bg=BORDER, fg=TEXT)
+                    return toggle
+
+                fbtn.configure(command=_make_toggle(fbtn, u_id))
+
+        tk.Frame(inner, bg=BG, height=24).pack()
 
 # ── Profile post card ─────────────────────────────────────────────────────────
 

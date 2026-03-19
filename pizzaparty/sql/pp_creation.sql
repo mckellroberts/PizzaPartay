@@ -67,3 +67,13 @@ CREATE TABLE IF NOT EXISTS Blocked_ledger (
     PRIMARY KEY (blocker_u_id, blocks_u_id),
     CHECK (blocker_u_id != blocks_u_id)
 );
+
+CREATE TABLE IF NOT EXISTS Notifications (
+    notif_id   INTEGER  PRIMARY KEY AUTOINCREMENT,
+    u_id       INTEGER  NOT NULL REFERENCES Users(u_id),
+    kind       TEXT     NOT NULL,
+    from_u_id  INTEGER  NOT NULL REFERENCES Users(u_id),
+    post_id    INTEGER  REFERENCES Posts(post_id),
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    is_read    INTEGER  NOT NULL DEFAULT 0
+);

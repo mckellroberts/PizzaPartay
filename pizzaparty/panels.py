@@ -21,7 +21,7 @@ class PostCard(tk.Frame):
                          highlightthickness=1, highlightbackground=BORDER)
         self.pack(fill="x", padx=30, pady=(0, 10))
 
-        (self.post_id, _, self.author, self.content,
+        (self.post_id, self.author_u_id, self.author, self.content,
          self.created_at, self.likes, self.dlikes, self.n_comments,
          self.edited, self.my_like, self.my_dlike) = row
 
@@ -35,19 +35,30 @@ class PostCard(tk.Frame):
         header.pack(fill="x", padx=14, pady=(12, 0))
 
         clr = avatar_color(self.author)
-        av  = tk.Canvas(header, width=34, height=34, bg=CARD, highlightthickness=0)
+        av  = tk.Canvas(header, width=34, height=34, bg=CARD, highlightthickness=0,
+                        cursor="hand2")
         av.pack(side="left")
         av.create_oval(1, 1, 33, 33, fill=clr, outline="")
         av.create_text(17, 17, text=self.author[0].upper(),
                        fill="white", font=F["FONT_AV_LG"])
 
-        meta_box = tk.Frame(header, bg=CARD)
+        meta_box = tk.Frame(header, bg=CARD, cursor="hand2")
         meta_box.pack(side="left", padx=(10, 0))
-        tk.Label(meta_box, text=f"@{self.author}",
-                 font=F["FONT_HANDLE"], bg=CARD, fg=TEXT).pack(anchor="w")
+        uname_lbl = tk.Label(meta_box, text=f"@{self.author}",
+                             font=F["FONT_HANDLE"], bg=CARD, fg=TEXT, cursor="hand2")
+        uname_lbl.pack(anchor="w")
         age_txt = format_age(self.created_at) + (" · edited" if self.edited else "")
         tk.Label(meta_box, text=age_txt,
                  font=F["FONT_META"], bg=CARD, fg=SUBTEXT).pack(anchor="w")
+
+        def _go_profile(_e=None):
+            if self.app:
+                self.app.open_profile(self.author_u_id)
+
+        for w in (av, meta_box, uname_lbl):
+            w.bind("<Button-1>", _go_profile)
+        uname_lbl.bind("<Enter>", lambda e: uname_lbl.configure(fg=ACCENT))
+        uname_lbl.bind("<Leave>", lambda e: uname_lbl.configure(fg=TEXT))
 
         content_lbl = tk.Label(
             self, text=self.content, font=F["FONT_POST"],
@@ -370,7 +381,7 @@ class CommentsPanel(tk.Frame):
 
         post = db.get_post_header(self.post_id, self.viewer_u_id)
         if post:
-            _, author, content, created_at, edited = post
+            _, post_author_u_id, author, content, created_at, edited = post
             ctx = tk.Frame(self, bg=CARD)
             ctx.pack(fill="x")
 
@@ -378,14 +389,24 @@ class CommentsPanel(tk.Frame):
             ctx_hdr.pack(fill="x", padx=10, pady=(8, 2))
 
             clr = avatar_color(author)
-            av  = tk.Canvas(ctx_hdr, width=20, height=20, bg=CARD, highlightthickness=0)
+            av  = tk.Canvas(ctx_hdr, width=20, height=20, bg=CARD, highlightthickness=0,
+                            cursor="hand2")
             av.pack(side="left")
             av.create_oval(1, 1, 19, 19, fill=clr, outline="")
             av.create_text(10, 10, text=author[0].upper(),
                            fill="white", font=F["FONT_AV_SM"])
 
-            tk.Label(ctx_hdr, text=f"@{author}", font=F["FONT_CMT_HANDLE"],
-                     bg=CARD, fg=TEXT).pack(side="left", padx=(6, 0))
+            author_lbl = tk.Label(ctx_hdr, text=f"@{author}", font=F["FONT_CMT_HANDLE"],
+                                  bg=CARD, fg=TEXT, cursor="hand2")
+            author_lbl.pack(side="left", padx=(6, 0))
+
+            def _open_post_author(_e=None, uid=post_author_u_id):
+                self.app.open_profile(uid)
+
+            av.bind("<Button-1>", _open_post_author)
+            author_lbl.bind("<Button-1>", _open_post_author)
+            author_lbl.bind("<Enter>", lambda e: author_lbl.configure(fg=ACCENT))
+            author_lbl.bind("<Leave>", lambda e: author_lbl.configure(fg=TEXT))
             age = format_age(created_at) + (" · edited" if edited else "")
             tk.Label(ctx_hdr, text=age, font=F["FONT_CMT_META"],
                      bg=CARD, fg=SUBTEXT).pack(side="left", padx=(5, 0))
@@ -514,14 +535,24 @@ class CommentsPanel(tk.Frame):
             chdr.pack(fill="x", padx=8, pady=(5, 2))
 
             clr = avatar_color(uname)
-            av  = tk.Canvas(chdr, width=16, height=16, bg=CARD, highlightthickness=0)
+            av  = tk.Canvas(chdr, width=16, height=16, bg=CARD, highlightthickness=0,
+                            cursor="hand2")
             av.pack(side="left")
             av.create_oval(1, 1, 15, 15, fill=clr, outline="")
             av.create_text(8, 8, text=uname[0].upper(),
                            fill="white", font=F["FONT_AV_SM"])
 
-            tk.Label(chdr, text=f"@{uname}", font=F["FONT_CMT_HANDLE"],
-                     bg=CARD, fg=TEXT).pack(side="left", padx=(4, 0))
+            uname_lbl = tk.Label(chdr, text=f"@{uname}", font=F["FONT_CMT_HANDLE"],
+                                 bg=CARD, fg=TEXT, cursor="hand2")
+            uname_lbl.pack(side="left", padx=(4, 0))
+
+            def _open_cmt_author(_e=None, _uid=uid):
+                self.app.open_profile(_uid)
+
+            av.bind("<Button-1>", _open_cmt_author)
+            uname_lbl.bind("<Button-1>", _open_cmt_author)
+            uname_lbl.bind("<Enter>", lambda e, l=uname_lbl: l.configure(fg=ACCENT))
+            uname_lbl.bind("<Leave>", lambda e, l=uname_lbl: l.configure(fg=TEXT))
             age = format_age(created_at) + (" · edited" if edited else "")
             tk.Label(chdr, text=age, font=F["FONT_CMT_META"],
                      bg=CARD, fg=SUBTEXT).pack(side="left", padx=(4, 0))

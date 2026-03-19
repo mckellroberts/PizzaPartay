@@ -8,6 +8,7 @@ from pizzaparty.db import (
     like_post, dislike_post, remove_post_reaction,
     create_comment, edit_comment, delete_comment,
     like_comment, dislike_comment,
+    create_notification,
 )
 
 SQL_DIR = os.path.join(os.path.dirname(__file__), "pizzaparty", "sql")
@@ -100,6 +101,25 @@ def seed():
         like_comment(c3,   bob);      like_comment(c3,   carol)
         like_comment(c3r1, alice);    like_comment(c3r1, carol)
         like_comment(c5,   alice);    like_comment(c5,   bob)
+
+        # Notifications (follow, like, reply)
+        create_notification(alice, "follow", bob)
+        create_notification(alice, "follow", carol)
+        create_notification(alice, "follow", dave)
+        create_notification(alice, "follow", eve)
+        create_notification(alice, "like",   bob,   post_id=p1)
+        create_notification(alice, "like",   carol, post_id=p1)
+        create_notification(alice, "like",   dave,  post_id=p1)
+        create_notification(bob,   "follow", alice)
+        create_notification(bob,   "follow", carol)
+        create_notification(bob,   "like",   alice, post_id=p3)
+        create_notification(bob,   "reply",  alice, post_id=p2)
+        create_notification(carol, "follow", alice)
+        create_notification(carol, "like",   bob,   post_id=p3)
+        create_notification(dave,  "follow", alice)
+        create_notification(dave,  "like",   alice, post_id=p7)
+        create_notification(dave,  "like",   bob,   post_id=p7)
+        create_notification(dave,  "like",   carol, post_id=p7)
 
     except Exception:
         if os.path.exists(DB_PATH):
