@@ -62,10 +62,12 @@ class PostCard(tk.Frame):
         actions = tk.Frame(self, bg=CARD)
         actions.pack(fill="x", padx=8, pady=5)
 
-        self._reaction_btn(actions, "▲", self.likes, bool(self.my_like),
-                           LIKE_CLR, lambda: self._react("like"))
-        self._reaction_btn(actions, "▼", self.dlikes, bool(self.my_dlike),
-                           DLIK_CLR, lambda: self._react("dislike"))
+        self._like_btn  = self._reaction_btn(actions, "▲", self.likes,
+                                              bool(self.my_like),  LIKE_CLR,
+                                              lambda: self._react("like"))
+        self._dlike_btn = self._reaction_btn(actions, "▼", self.dlikes,
+                                             bool(self.my_dlike), DLIK_CLR,
+                                             lambda: self._react("dislike"))
 
         tk.Frame(actions, bg=BORDER, width=1).pack(side="left", fill="y", padx=10, pady=4)
 
@@ -99,7 +101,35 @@ class PostCard(tk.Frame):
 
     def _react(self, kind: str):
         db.toggle_post_reaction(self.post_id, self.viewer_u_id, kind)
-        self.on_reaction()
+        if kind == "like":
+            if self.my_like:
+                self.my_like = 0;  self.likes -= 1
+            else:
+                self.my_like = 1;  self.likes += 1
+                if self.my_dlike:
+                    self.my_dlike = 0; self.dlikes -= 1
+        else:
+            if self.my_dlike:
+                self.my_dlike = 0; self.dlikes -= 1
+            else:
+                self.my_dlike = 1; self.dlikes += 1
+                if self.my_like:
+                    self.my_like = 0; self.likes -= 1
+        self._update_reaction_btns()
+
+    def _update_reaction_btns(self):
+        lc = LIKE_CLR if self.my_like  else SUBTEXT
+        dc = DLIK_CLR if self.my_dlike else SUBTEXT
+        self._like_btn.configure(text=f"▲  {self.likes}",   fg=lc)
+        self._dlike_btn.configure(text=f"▼  {self.dlikes}", fg=dc)
+        self._like_btn.unbind("<Enter>");  self._like_btn.unbind("<Leave>")
+        self._dlike_btn.unbind("<Enter>"); self._dlike_btn.unbind("<Leave>")
+        if not self.my_like:
+            self._like_btn.bind("<Enter>",  lambda e: self._like_btn.configure(fg=LIKE_CLR))
+            self._like_btn.bind("<Leave>",  lambda e: self._like_btn.configure(fg=SUBTEXT))
+        if not self.my_dlike:
+            self._dlike_btn.bind("<Enter>", lambda e: self._dlike_btn.configure(fg=DLIK_CLR))
+            self._dlike_btn.bind("<Leave>", lambda e: self._dlike_btn.configure(fg=SUBTEXT))
 
     def _open_comments(self):
         self.app.open_comments(self.post_id, self.viewer_u_id)
