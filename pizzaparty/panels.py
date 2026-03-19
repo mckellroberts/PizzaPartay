@@ -215,53 +215,69 @@ class AccountSwitcherPanel(tk.Frame):
 
     def _render_row(self, u_id: int, username: str,
                     is_deleted: bool, is_current: bool):
-        row = tk.Frame(self, bg=PANEL)
+        clickable = not is_deleted and not is_current
+        row_bg    = PANEL
+        row = tk.Frame(self, bg=row_bg, cursor="hand2" if clickable else "")
         row.pack(fill="x", padx=8, pady=4)
 
         clr = avatar_color(username)
-        av  = tk.Canvas(row, width=28, height=28, bg=PANEL, highlightthickness=0)
+        av  = tk.Canvas(row, width=28, height=28, bg=row_bg, highlightthickness=0)
         av.pack(side="left")
         av.create_oval(1, 1, 27, 27, fill=clr if not is_deleted else BORDER, outline="")
         av.create_text(14, 14, text=username[0].upper(),
                        fill="white" if not is_deleted else SUBTEXT,
                        font=F["FONT_AV_SM"])
 
-        text_block = tk.Frame(row, bg=PANEL)
-        text_block.pack(side="left", padx=(8, 0), expand=True, fill="x")
-
         name_color = SUBTEXT if is_deleted else (ACCENT if is_current else TEXT)
         name_text  = f"@{username}" + (" (you)" if is_current else "")
-        tk.Label(text_block, text=name_text,
-                 font=F["FONT_HANDLE"], bg=PANEL, fg=name_color).pack(anchor="w")
 
         if is_deleted:
+            text_block = tk.Frame(row, bg=row_bg)
+            text_block.pack(side="left", padx=(8, 0), expand=True, fill="x")
+            tk.Label(text_block, text=name_text,
+                     font=F["FONT_HANDLE"], bg=row_bg, fg=name_color).pack(anchor="w")
             tk.Label(text_block, text="Account deleted",
-                     font=F["FONT_META"], bg=PANEL, fg=DLIK_CLR).pack(anchor="w")
-
-        if is_deleted:
-            def make_remove(uid=u_id):
-                return lambda: self._remove(uid)
+                     font=F["FONT_META"], bg=row_bg, fg=DLIK_CLR).pack(anchor="w")
             remove_btn = tk.Button(
-                row, text="✕ Remove",
-                command=make_remove(),
-                bg=PANEL, fg=DLIK_CLR,
+                row, text="✕ Remove", command=lambda uid=u_id: self._remove(uid),
+                bg=row_bg, fg=DLIK_CLR,
                 activebackground=CARD_HOV, activeforeground=DLIK_CLR,
                 relief="flat", font=F["FONT_META"], cursor="hand2",
                 borderwidth=0, padx=6
             )
             remove_btn.pack(side="right")
-        elif not is_current:
-            def make_switch(uid=u_id, uname=username):
-                return lambda: self._switch(uid, uname)
-            switch_btn = tk.Button(
-                row, text="Switch",
-                command=make_switch(),
-                bg=ACCENT, fg="white",
-                activebackground=ACCENT_HOV, activeforeground="white",
-                relief="flat", font=F["FONT_META"], cursor="hand2",
-                borderwidth=0, padx=10, pady=3
-            )
-            switch_btn.pack(side="right")
+        else:
+            switch_lbl = tk.Label(row, text="Switch" if clickable else "",
+                                  font=F["FONT_META"], bg=row_bg,
+                                  fg=ACCENT if clickable else row_bg)
+            switch_lbl.pack(side="right", padx=(0, 4))
+
+            text_block = tk.Frame(row, bg=row_bg)
+            text_block.pack(side="left", padx=(8, 0), expand=True, fill="x")
+            name_lbl = tk.Label(text_block, text=name_text,
+                                font=F["FONT_HANDLE"], bg=row_bg, fg=name_color)
+            name_lbl.pack(anchor="w")
+
+            if clickable:
+                cmd = lambda uid=u_id, uname=username: self._switch(uid, uname)
+                all_widgets = [row, av, text_block, name_lbl, switch_lbl]
+
+                def on_enter(e, widgets=all_widgets, sl=switch_lbl):
+                    for w in widgets:
+                        try:    w.configure(bg=CARD_HOV)
+                        except Exception: pass
+                    sl.configure(fg=ACCENT_HOV)
+
+                def on_leave(e, widgets=all_widgets, sl=switch_lbl):
+                    for w in widgets:
+                        try:    w.configure(bg=PANEL)
+                        except Exception: pass
+                    sl.configure(fg=ACCENT)
+
+                for w in all_widgets:
+                    w.bind("<Button-1>", lambda e, c=cmd: c())
+                    w.bind("<Enter>",    on_enter)
+                    w.bind("<Leave>",    on_leave)
 
         tk.Frame(self, bg=BORDER, height=1).pack(fill="x", padx=8)
 
