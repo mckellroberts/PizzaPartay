@@ -166,7 +166,7 @@ class AccountSwitcherPanel(tk.Frame):
                      font=F["FONT_SMALL"], bg=PANEL, fg=SUBTEXT
                      ).pack(pady=16, padx=12)
         else:
-            for u_id, username, is_deleted, last_used in sessions:
+            for u_id, username, is_deleted in sessions:
                 self._render_row(u_id, username, bool(is_deleted),
                                  is_current=(u_id == self.current_u_id))
 
@@ -249,7 +249,7 @@ class AccountSwitcherPanel(tk.Frame):
         current_sessions = db.get_sessions()
 
         def on_cancel():
-            for uid, uname, _, _ in current_sessions:
+            for uid, uname, _ in current_sessions:
                 if uid == current_u_id:
                     self.app.show_main(uid, uname)
                     return

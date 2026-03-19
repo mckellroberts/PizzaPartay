@@ -1,13 +1,12 @@
 import tkinter as tk
 from pizzaparty.theme import init_fonts, scale_fonts, BASE_W, BG
-from pizzaparty.db import init_db, save_session
+from pizzaparty.db import save_session, clear_sessions
 
 
 class App(tk.Tk):
-    def __init__(self):
+    def __init__(self, auto_login=None):
         super().__init__()
         init_fonts()
-        init_db()
 
         self.title("Pizza Party")
         self.configure(bg=BG)
@@ -21,7 +20,12 @@ class App(tk.Tk):
 
         self._center(420, 520)
         self.bind("<Configure>", self._on_configure)
-        self.show_auth()
+        if auto_login:
+            for u_id, username in auto_login:
+                save_session(u_id)
+            self.show_main(*auto_login[0])
+        else:
+            self.show_auth()
 
     def _center(self, w, h, use_screen_fraction=False):
         if use_screen_fraction:
@@ -62,6 +66,10 @@ class App(tk.Tk):
             widget.destroy()
         self._comments_panel = None
         self._switcher_panel = None
+
+    def logout(self):
+        clear_sessions()
+        self.show_auth()
 
     def show_auth(self, on_cancel=None):
         self._center(420, 520)

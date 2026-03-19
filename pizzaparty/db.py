@@ -9,47 +9,37 @@ def get_conn():
     conn.execute("PRAGMA foreign_keys = ON")
     return conn
 
-# ── Schema ────────────────────────────────────────────────────────────────────
+# ── Sessions (in-memory) ──────────────────────────────────────────────────────
 
-def init_db():
-    """Belt-and-suspenders: ensure Active_sessions exists at GUI startup."""
-    with get_conn() as conn:
-        conn.execute("""
-            CREATE TABLE IF NOT EXISTS Active_sessions (
-                u_id      INTEGER PRIMARY KEY REFERENCES Users(u_id),
-                last_used DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
-            )
-        """)
-
-# ── Sessions ──────────────────────────────────────────────────────────────────
+_sessions: list = []  # list of u_id ints, most-recent first, max 20
 
 def save_session(u_id: int):
-    with get_conn() as conn:
-        conn.execute("""
-            INSERT INTO Active_sessions (u_id, last_used)
-            VALUES (?, CURRENT_TIMESTAMP)
-            ON CONFLICT(u_id) DO UPDATE SET last_used = CURRENT_TIMESTAMP
-        """, (u_id,))
-        conn.execute("""
-            DELETE FROM Active_sessions
-            WHERE u_id NOT IN (
-                SELECT u_id FROM Active_sessions
-                ORDER BY last_used DESC LIMIT 20
-            )
-        """)
+    global _sessions
+    _sessions = [uid for uid in _sessions if uid != u_id]
+    _sessions.insert(0, u_id)
+    if len(_sessions) > 20:
+        _sessions = _sessions[:20]
 
 def get_sessions():
+    """Returns list of (u_id, username, is_deleted) tuples."""
+    if not _sessions:
+        return []
     with get_conn() as conn:
-        return conn.execute("""
-            SELECT s.u_id, u.username, u.is_deleted, s.last_used
-            FROM   Active_sessions s
-            JOIN   Users u ON u.u_id = s.u_id
-            ORDER  BY s.last_used DESC
-        """).fetchall()
+        placeholders = ",".join("?" * len(_sessions))
+        rows = conn.execute(
+            f"SELECT u_id, username, is_deleted FROM Users WHERE u_id IN ({placeholders})",
+            _sessions
+        ).fetchall()
+    by_id = {row[0]: row for row in rows}
+    return [by_id[uid] for uid in _sessions if uid in by_id]
 
 def remove_session(u_id: int):
-    with get_conn() as conn:
-        conn.execute("DELETE FROM Active_sessions WHERE u_id = ?", (u_id,))
+    global _sessions
+    _sessions = [uid for uid in _sessions if uid != u_id]
+
+def clear_sessions():
+    global _sessions
+    _sessions = []
 
 # ── Users ─────────────────────────────────────────────────────────────────────
 
@@ -176,6 +166,22 @@ def get_profile(u_id: int):
             WHERE  u.u_id = ?
             GROUP  BY u.u_id
         """, (u_id,)).fetchone()
+
+def get_private_posts(u_id: int):
+    with get_conn() as conn:
+        return conn.execute("""
+            SELECT p.post_id, p.u_id, u.username, p.content, p.created_at,
+                   p.like_count, p.dlike_count, p.comment_count, p.been_edited,
+                   COALESCE(pl.is_like,  0),
+                   COALESCE(pl.is_dlike, 0),
+                   p.is_private
+            FROM   Posts p
+            JOIN   Users u ON p.u_id = u.u_id
+            LEFT JOIN Posts_ledger pl ON p.post_id = pl.post_id AND pl.u_id = ?
+            WHERE  p.u_id = ? AND p.is_private = 1
+              AND  p.is_deleted = 0 AND p.is_archived = 0
+            ORDER  BY p.created_at DESC
+        """, (u_id, u_id)).fetchall()
 
 def get_user_posts(profile_u_id: int, viewer_u_id: int):
     with get_conn() as conn:

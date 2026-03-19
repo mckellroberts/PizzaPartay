@@ -67,8 +67,3 @@ CREATE TABLE IF NOT EXISTS Blocked_ledger (
     PRIMARY KEY (blocker_u_id, blocks_u_id),
     CHECK (blocker_u_id != blocks_u_id)
 );
-
-CREATE TABLE IF NOT EXISTS Active_sessions (
-    u_id      INTEGER PRIMARY KEY REFERENCES Users(u_id),
-    last_used DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
-);

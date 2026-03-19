@@ -169,7 +169,10 @@ class MainScreen(tk.Frame):
         self._build()
 
     def _build(self):
+        self._current_feed = "for_you"
+        self._tab_btns     = {}
         self._build_nav()
+        self._build_tab_bar()
         self._content_frame = tk.Frame(self, bg=BG)
         self._content_frame.pack(fill="both", expand=True)
         self._show_feed()
@@ -182,9 +185,16 @@ class MainScreen(tk.Frame):
         self.app.close_comments()
         self.app.close_switcher()
         self._clear_content()
-        self._build_composer()
-        self._build_feed_area()
-        self.refresh()
+        if self._current_feed in ("for_you", "my_posts", "private"):
+            self._build_composer()
+            self._build_feed_area()
+            self.refresh()
+        else:
+            tk.Label(
+                self._content_frame,
+                text="Coming soon.",
+                font=F["FONT_SMALL"], bg=BG, fg=SUBTEXT, pady=60
+            ).pack()
 
     def _show_profile(self):
         self.app.close_comments()
@@ -193,6 +203,48 @@ class MainScreen(tk.Frame):
         ProfilePanel(self._content_frame, self.u_id, self.u_id,
                      viewer_u_id=self.u_id,
                      on_back=self._show_feed)
+
+    # ── Tab bar ───────────────────────────────────────────────────────────────
+
+    _TABS = [
+        ("for_you",  "For You"),
+        ("my_posts", "My Posts"),
+        ("private",  "Private"),
+        ("discover", "Discover"),
+        ("top",      "Top"),
+    ]
+
+    def _build_tab_bar(self):
+        bar = tk.Frame(self, bg=PANEL, height=34,
+                       highlightthickness=1, highlightbackground=BORDER)
+        bar.pack(fill="x", side="top")
+        bar.pack_propagate(False)
+
+        for feed_id, label in self._TABS:
+            btn = tk.Button(
+                bar, text=label,
+                command=lambda fid=feed_id: self._switch_feed(fid),
+                relief="flat", font=F["FONT_LABEL"], cursor="hand2",
+                padx=16, pady=0, borderwidth=0
+            )
+            btn.pack(side="left", fill="y")
+            self._tab_btns[feed_id] = btn
+
+        self._update_tab_styles()
+
+    def _update_tab_styles(self):
+        for fid, btn in self._tab_btns.items():
+            active = (fid == self._current_feed)
+            btn.configure(
+                bg=ACCENT if active else PANEL,
+                fg="white" if active else SUBTEXT,
+                activebackground=ACCENT_HOV, activeforeground="white"
+            )
+
+    def _switch_feed(self, name: str):
+        self._current_feed = name
+        self._update_tab_styles()
+        self._show_feed()
 
     # ── Top navigation bar ────────────────────────────────────────────────────
 
@@ -220,7 +272,7 @@ class MainScreen(tk.Frame):
         right.pack(side="right", padx=16, fill="y")
 
         logout_btn = tk.Button(
-            right, text="Log out", command=self.app.show_auth,
+            right, text="Log out", command=self.app.logout,
             bg=PANEL, fg=SUBTEXT,
             activebackground=BORDER, activeforeground=TEXT,
             relief="flat", font=F["FONT_SMALL"], cursor="hand2", borderwidth=0,
@@ -322,7 +374,7 @@ class MainScreen(tk.Frame):
 
         self._composer_text.bind("<KeyRelease>", self._on_composer_key)
 
-        self._is_private = tk.BooleanVar(value=False)
+        self._is_private = tk.BooleanVar(value=(self._current_feed == "private"))
         tk.Checkbutton(
             footer, text="🔒 Private",
             variable=self._is_private,
@@ -392,27 +444,47 @@ class MainScreen(tk.Frame):
         for w in self._feed_frame.winfo_children():
             w.destroy()
 
-        posts = db.get_feed_posts(self.u_id)
+        if self._current_feed == "for_you":
+            posts        = db.get_feed_posts(self.u_id)
+            section      = "For You"
+            empty_msg    = "Nothing here yet — follow some people to see their posts."
+            use_profile_card = False
+        elif self._current_feed == "my_posts":
+            posts        = db.get_user_posts(self.u_id, self.u_id)
+            section      = "My Posts"
+            empty_msg    = "You haven't posted anything yet."
+            use_profile_card = True
+        else:  # private
+            posts        = db.get_private_posts(self.u_id)
+            section      = "Private Posts"
+            empty_msg    = "You have no private posts."
+            use_profile_card = True
 
         if not posts:
             tk.Label(
-                self._feed_frame,
-                text="Nothing here yet — follow some people to see their posts.",
+                self._feed_frame, text=empty_msg,
                 font=F["FONT_SMALL"], bg=BG, fg=SUBTEXT, pady=60
             ).pack()
             return
 
         hdr = tk.Frame(self._feed_frame, bg=BG)
         hdr.pack(fill="x", padx=30, pady=(18, 6))
-        tk.Label(hdr, text="Your Feed", font=F["FONT_SECTION"],
+        tk.Label(hdr, text=section, font=F["FONT_SECTION"],
                  bg=BG, fg=TEXT).pack(side="left")
         tk.Label(hdr, text=f"{len(posts)} posts", font=F["FONT_SMALL"],
                  bg=BG, fg=SUBTEXT).pack(side="left", padx=(8, 0))
 
-        from pizzaparty.panels import PostCard
-        for row in posts:
-            PostCard(self._feed_frame, row, self.u_id,
-                     on_reaction=self.refresh, app=self.app)
+        if use_profile_card:
+            for row in posts:
+                ProfilePostCard(
+                    self._feed_frame, row, self.u_id,
+                    is_owner=True, on_change=self.refresh
+                )
+        else:
+            from pizzaparty.panels import PostCard
+            for row in posts:
+                PostCard(self._feed_frame, row, self.u_id,
+                         on_reaction=self.refresh, app=self.app)
 
         tk.Frame(self._feed_frame, bg=BG, height=24).pack()
 
