@@ -102,8 +102,7 @@ class PostCard(tk.Frame):
         self.on_reaction()
 
     def _open_comments(self):
-        self.app.open_comments(self.post_id, self.viewer_u_id,
-                               on_close=self.on_reaction)
+        self.app.open_comments(self.post_id, self.viewer_u_id)
 
 # ── Account switcher panel ────────────────────────────────────────────────────
 
@@ -282,6 +281,7 @@ class CommentsPanel(tk.Frame):
         self._place()
         self.lift()
         self._build()
+        app.bind("<Button-1>", self._on_global_click, add="+")
 
     def _panel_dims(self):
         w = max(300, int(self.app.winfo_width()  * self.W_FRAC))
@@ -300,6 +300,18 @@ class CommentsPanel(tk.Frame):
         if self.winfo_exists():
             self._place()
 
+    def _on_global_click(self, event):
+        try:
+            wx = self.winfo_rootx()
+            wy = self.winfo_rooty()
+            ww = self.winfo_width()
+            wh = self.winfo_height()
+            if wx <= event.x_root <= wx + ww and wy <= event.y_root <= wy + wh:
+                return
+        except Exception:
+            return
+        self.app.close_comments()
+
     # ── Layout ────────────────────────────────────────────────────────────────
 
     def _build(self):
@@ -307,16 +319,8 @@ class CommentsPanel(tk.Frame):
         title_bar.pack(fill="x", side="top")
         title_bar.pack_propagate(False)
 
-        tk.Label(title_bar, text="💬  Comments", font=F["FONT_HANDLE"],
+        tk.Label(title_bar, text="✦  Comments", font=F["FONT_HANDLE"],
                  bg=ACCENT, fg="white").pack(side="left", padx=12)
-
-        tk.Button(
-            title_bar, text="✕", command=self._close,
-            bg=ACCENT, fg="white",
-            activebackground=ACCENT_HOV, activeforeground="white",
-            relief="flat", font=F["FONT_LABEL"], cursor="hand2",
-            borderwidth=0, padx=10
-        ).pack(side="right")
 
         post = db.get_post_header(self.post_id, self.viewer_u_id)
         if post:
@@ -506,14 +510,59 @@ class CommentsPanel(tk.Frame):
             arow = tk.Frame(card, bg=CARD)
             arow.pack(fill="x", padx=6, pady=(0, 4))
 
-            lc = LIKE_CLR if my_like  else SUBTEXT
-            dc = DLIK_CLR if my_dlike else SUBTEXT
-            tk.Label(arow, text=f"▲ {likes}",
-                     font=F["FONT_CMT_REACT"], bg=CARD, fg=lc
-                     ).pack(side="left", padx=(2, 0))
-            tk.Label(arow, text=f"▼ {dlikes}",
-                     font=F["FONT_CMT_REACT"], bg=CARD, fg=dc
-                     ).pack(side="left", padx=(5, 0))
+            state = {
+                "my_like": bool(my_like), "my_dlike": bool(my_dlike),
+                "likes": likes, "dlikes": dlikes,
+            }
+
+            lb   = tk.Button(arow, bg=CARD, activebackground=CARD_HOV,
+                             relief="flat", font=F["FONT_CMT_REACT"],
+                             cursor="hand2", borderwidth=0, padx=4)
+            db_b = tk.Button(arow, bg=CARD, activebackground=CARD_HOV,
+                             relief="flat", font=F["FONT_CMT_REACT"],
+                             cursor="hand2", borderwidth=0, padx=4)
+            lb.pack(side="left", padx=(2, 0))
+            db_b.pack(side="left", padx=(2, 0))
+
+            def refresh_reaction_btns(s=state, l=lb, d=db_b):
+                lc = LIKE_CLR if s["my_like"]  else SUBTEXT
+                dc = DLIK_CLR if s["my_dlike"] else SUBTEXT
+                l.configure(text=f"▲ {s['likes']}",   fg=lc, activeforeground=LIKE_CLR)
+                d.configure(text=f"▼ {s['dlikes']}", fg=dc, activeforeground=DLIK_CLR)
+                l.unbind("<Enter>"); l.unbind("<Leave>")
+                d.unbind("<Enter>"); d.unbind("<Leave>")
+                if not s["my_like"]:
+                    l.bind("<Enter>", lambda e: l.configure(fg=LIKE_CLR))
+                    l.bind("<Leave>", lambda e: l.configure(fg=SUBTEXT))
+                if not s["my_dlike"]:
+                    d.bind("<Enter>", lambda e: d.configure(fg=DLIK_CLR))
+                    d.bind("<Leave>", lambda e: d.configure(fg=SUBTEXT))
+
+            def react_like(c_id=cid, s=state):
+                if s["my_like"]:
+                    db.remove_comment_reaction(c_id, self.viewer_u_id)
+                    s["my_like"] = False;  s["likes"] -= 1
+                else:
+                    db.like_comment(c_id, self.viewer_u_id)
+                    s["my_like"] = True;   s["likes"] += 1
+                    if s["my_dlike"]:
+                        s["my_dlike"] = False; s["dlikes"] -= 1
+                refresh_reaction_btns()
+
+            def react_dislike(c_id=cid, s=state):
+                if s["my_dlike"]:
+                    db.remove_comment_reaction(c_id, self.viewer_u_id)
+                    s["my_dlike"] = False; s["dlikes"] -= 1
+                else:
+                    db.dislike_comment(c_id, self.viewer_u_id)
+                    s["my_dlike"] = True;  s["dlikes"] += 1
+                    if s["my_like"]:
+                        s["my_like"] = False; s["likes"] -= 1
+                refresh_reaction_btns()
+
+            lb.configure(command=react_like)
+            db_b.configure(command=react_dislike)
+            refresh_reaction_btns()
 
             def make_reply(c_id=cid, c_uname=uname):
                 return lambda: self._set_reply_target(c_id, c_uname)

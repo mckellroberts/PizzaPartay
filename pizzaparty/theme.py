@@ -1,3 +1,4 @@
+import sys
 import tkinter as tk
 import tkinter.font as tkfont
 from datetime import datetime
@@ -26,37 +27,60 @@ ENTRY_BG   = "#111111"
 BASE_W = 700
 BASE_H = 780
 
-# (family, base_size, weight)
-_FONT_SPECS = {
-    "FONT_TITLE":        ("Georgia",    22, "bold"),
-    "FONT_LABEL":        ("Helvetica",  10, "normal"),
-    "FONT_ENTRY":        ("Helvetica",  11, "normal"),
-    "FONT_BTN":          ("Helvetica",  11, "bold"),
-    "FONT_SMALL":        ("Helvetica",   9, "normal"),
-    "FONT_NAV":          ("Georgia",    15, "bold"),
-    "FONT_HANDLE":       ("Helvetica",  10, "bold"),
-    "FONT_POST":         ("Helvetica",  11, "normal"),
-    "FONT_META":         ("Helvetica",   9, "normal"),
-    "FONT_SECTION":      ("Georgia",    13, "bold"),
-    "FONT_PROFILE_NAME": ("Georgia",    16, "bold"),
-    "FONT_STATS_VAL":    ("Helvetica",  12, "bold"),
-    "FONT_PIZZA":        ("Helvetica",  18, "normal"),
-    "FONT_AV_SM":        ("Helvetica",   7, "bold"),
-    "FONT_AV_MD":        ("Helvetica",  10, "bold"),
-    "FONT_AV_LG":        ("Helvetica",  12, "bold"),
-    "FONT_AV_XL":        ("Helvetica",  26, "bold"),
-    "FONT_CMT_BODY":     ("Helvetica",   9, "normal"),
-    "FONT_CMT_HANDLE":   ("Helvetica",   8, "bold"),
-    "FONT_CMT_META":     ("Helvetica",   7, "normal"),
-    "FONT_CMT_REACT":    ("Helvetica",   7, "bold"),
-}
-
 # Populated by init_fonts() called in App.__init__
-F: dict = {}
+F:           dict = {}
+_FONT_SPECS: dict = {}  # set by init_fonts(); used by scale_fonts()
+
+
+def _resolve_families():
+    """Return (sans, serif, emoji) font families for this platform."""
+    def pick(candidates):
+        available = set(tkfont.families())
+        return next((f for f in candidates if f in available), candidates[-1])
+
+    if sys.platform.startswith("linux"):
+        sans  = pick(["Noto Sans", "DejaVu Sans", "Liberation Sans", "Helvetica"])
+        serif = pick(["Noto Serif", "DejaVu Serif", "Liberation Serif", "Georgia"])
+        emoji = pick(["Symbola", "Noto Emoji", "Segoe UI Emoji", sans])
+    elif sys.platform == "darwin":
+        sans, serif, emoji = "Helvetica", "Georgia", "Apple Color Emoji"
+    else:
+        sans, serif, emoji = "Helvetica", "Georgia", "Segoe UI Emoji"
+
+    return sans, serif, emoji
+
 
 def init_fonts():
+    global _FONT_SPECS
+    sans, serif, emoji = _resolve_families()
+
+    _FONT_SPECS = {
+        "FONT_TITLE":        (serif,  22, "bold"),
+        "FONT_LABEL":        (sans,   10, "normal"),
+        "FONT_ENTRY":        (sans,   11, "normal"),
+        "FONT_BTN":          (sans,   11, "bold"),
+        "FONT_SMALL":        (sans,    9, "normal"),
+        "FONT_NAV":          (serif,  15, "bold"),
+        "FONT_HANDLE":       (sans,   10, "bold"),
+        "FONT_POST":         (sans,   11, "normal"),
+        "FONT_META":         (sans,    9, "normal"),
+        "FONT_SECTION":      (serif,  13, "bold"),
+        "FONT_PROFILE_NAME": (serif,  16, "bold"),
+        "FONT_STATS_VAL":    (sans,   12, "bold"),
+        "FONT_PIZZA":        (emoji,  18, "normal"),
+        "FONT_AV_SM":        (sans,    7, "bold"),
+        "FONT_AV_MD":        (sans,   10, "bold"),
+        "FONT_AV_LG":        (sans,   12, "bold"),
+        "FONT_AV_XL":        (sans,   26, "bold"),
+        "FONT_CMT_BODY":     (sans,    9, "normal"),
+        "FONT_CMT_HANDLE":   (sans,    8, "bold"),
+        "FONT_CMT_META":     (sans,    7, "normal"),
+        "FONT_CMT_REACT":    (sans,    7, "bold"),
+    }
+
     for name, (family, size, weight) in _FONT_SPECS.items():
         F[name] = tkfont.Font(family=family, size=size, weight=weight)
+
 
 def scale_fonts(scale: float):
     """Rescale all named fonts proportionally to `scale`."""

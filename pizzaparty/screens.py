@@ -764,8 +764,7 @@ class ProfilePostCard(tk.Frame):
 
     def _open_comments(self):
         if self.app:
-            self.app.open_comments(self.post_id, self.viewer_u_id,
-                                   on_close=self.on_change)
+            self.app.open_comments(self.post_id, self.viewer_u_id)
 
     def _start_edit(self):
         self._editing = True
